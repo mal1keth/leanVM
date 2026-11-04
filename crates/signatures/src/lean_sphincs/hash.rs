@@ -99,7 +99,7 @@ pub fn th_digests(pk_seed: &PkSeed, adrs: &Adrs, values: &[Digest]) -> Digest {
 }
 
 /// `PRF(PK.seed, SK.seed, ADRS)`.
-pub fn prf(pk_seed: &PkSeed, sk_seed: &Digest, adrs: &Adrs) -> Digest {
+pub fn prf(pk_seed: &PkSeed, sk_seed: &Seed, adrs: &Adrs) -> Digest {
     th(pk_seed, adrs, sk_seed)
 }
 
@@ -132,31 +132,23 @@ pub fn h_msg(r: &Digest, pk_seed: &PkSeed, pk_root: &Digest, m: &Message) -> [u8
     mgf1(&[r.as_slice(), pk_seed, &inner].concat())
 }
 
-/// FIPS 205's three key seeds, which `slh_keygen_internal` takes.
+/// FIPS 205's three key seeds, which `slh_keygen_internal` takes. Here `SK.seed` is
+/// 32 bytes, the whole secret key, and the other two derive from it.
 #[derive(Clone, Copy)]
 pub struct KeySeeds {
-    pub sk_seed: Digest,
+    pub sk_seed: Seed,
     pub sk_prf: Digest,
     pub pk_seed: PkSeed,
 }
 
-impl KeySeeds {
-    /// `SK.seed | SK.prf | PK.seed`.
-    pub fn from_bytes(bytes: &[u8; 3 * N]) -> Self {
-        let [sk_seed, sk_prf, pk_seed] = *bytes.as_chunks::<N>().0 else {
-            unreachable!()
-        };
-        Self {
-            sk_seed,
-            sk_prf,
-            pk_seed,
-        }
+/// The key seeds of `SK.seed`: `PK.seed | SK.prf = H(tag | SK.seed)`.
+pub fn key_seeds(sk_seed: &Seed) -> KeySeeds {
+    let out = Hasher::new().update(SEED_TAG).update(sk_seed).finalize();
+    KeySeeds {
+        sk_seed: *sk_seed,
+        sk_prf: out[N..].try_into().unwrap(),
+        pk_seed: out[..N].try_into().unwrap(),
     }
-}
-
-/// The key seeds of a key's seed: `SK.seed | SK.prf | PK.seed = MGF1(tag | seed, 3n)`.
-pub fn key_seeds(seed: &Seed) -> KeySeeds {
-    KeySeeds::from_bytes(&mgf1(&[SEED_TAG, seed].concat()))
 }
 
 #[cfg(test)]

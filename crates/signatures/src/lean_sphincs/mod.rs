@@ -14,8 +14,8 @@
 //! bytes than one call gives, is FIPS 205's SHA2 construction: MGF1 over the hash
 //! of `R | PK.seed | PK.root | M` (the `hash` module).
 //!
-//! The secret key is one 32-byte seed, which MGF1 under the scheme's tag expands
-//! into FIPS 205's `SK.seed`, `SK.prf` and `PK.seed`. Key generation builds the
+//! The secret key is `SK.seed`, 32 bytes and the only secret: its hash under the
+//! scheme's tag gives `PK.seed` and `SK.prf`. Key generation builds the
 //! top tree, and signing it again for `PK.root`, then the FORS instance and the
 //! two trees below it.
 

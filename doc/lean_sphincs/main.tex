@@ -71,7 +71,7 @@ This specification defines leanSPHINCS, a stateless hash-based signature scheme:
 \end{itemize}
 \end{abstract}
 
-A message digest picks a FORS instance and one leaf in each of its trees. The FORS signature signs the message, and a hypertree of WOTS$^+$C keys signs the FORS public key up to the public key. The algorithms are those of FIPS~205 but for three changes: the one-time signature (Section~\ref{sec:ots}), the layers' heights (Section~\ref{sec:layer}), and the hash, Keccak-256 where FIPS~205 has SHAKE256 (Section~\ref{sec:parameters}), with the message hash built as FIPS~205's SHA2 instances build theirs. A 256-bit message is signed by FIPS~205's internal functions, without the context prefix of its external ones, and the key seeds derive from one 256-bit seed (Section~\ref{sec:parameters}). The definitions below specify the scheme completely.
+A message digest picks a FORS instance and one leaf in each of its trees. The FORS signature signs the message, and a hypertree of WOTS$^+$C keys signs the FORS public key up to the public key. The algorithms are those of FIPS~205 but for three changes: the one-time signature (Section~\ref{sec:ots}), the layers' heights (Section~\ref{sec:layer}), and the hash, Keccak-256 where FIPS~205 has SHAKE256 (Section~\ref{sec:parameters}), with the message hash built as FIPS~205's SHA2 instances build theirs. A 256-bit message is signed by FIPS~205's internal functions, without the context prefix of its external ones, and the only secret is a 256-bit $\skseed$, from which $\skprf$ and $\pkseed$ derive (Section~\ref{sec:parameters}). The definitions below specify the scheme completely.
 
 \section{Hashing and parameters}
 \label{sec:parameters}
@@ -94,7 +94,7 @@ $\Th$ being FIPS~205's $\mathsf F$, $\mathsf H$ and $\mathsf T_\ell$ alike. Kecc
 \end{aligned}
 \]
 
-The message $M$ is 256 bits. The key seeds, chain values and Merkle nodes are $n$ bytes. The chunk size $w$ is FIPS~205's $\mathit{lg}_w$. The signature contains an $n$-byte randomizer $R$ and one 32-bit counter per layer.
+The message $M$ is 256 bits. $\pkseed$, $\skprf$, chain values and Merkle nodes are $n$ bytes. The chunk size $w$ is FIPS~205's $\mathit{lg}_w$. The signature contains an $n$-byte randomizer $R$ and one 32-bit counter per layer.
 
 \begin{center}
 \begin{tabular}{@{}lll@{}}
@@ -117,9 +117,9 @@ $\cmax$ & $2^{32}$ & maximum encoding attempts per layer\\
 \end{center}
 
 \paragraph{Keys.}
-The secret key is a 256-bit seed $S_0$. FIPS~205's three key seeds, which it draws from a random bit generator, are here the expansion of $S_0$ under the scheme's 11-byte ASCII name, so that no other scheme derives from the same bytes:
+FIPS~205 draws its three key seeds, of $n$ bytes each, from a random bit generator. Here the secret key is $\skseed$ alone, 256 bits, so that guessing it costs $2^{256}$ hashes, and the other two are its hash under the scheme's 11-byte ASCII name, so that no other scheme derives from the same bytes:
 \[
-  \skseed\concat\skprf\concat\pkseed=\MGF\!\left(\text{\texttt{leanSPHINCS}}\concat S_0,\,3n\right).
+  \pkseed\concat\skprf=\hash\!\left(\text{\texttt{leanSPHINCS}}\concat\skseed\right).
 \]
 Functions that read secrets use $\skseed$ and $\pkseed$ implicitly.
 
@@ -240,15 +240,15 @@ Every digest is accepted: every index is a leaf of the key.
 \subsection{Key generation}
 \label{rem:seed}
 
-$\Gen$ samples $S_0\getsr\bits{256}$, derives $\skseed$, $\skprf$ and $\pkseed$ as in Section~\ref{sec:parameters}, builds the top tree of $2^{h_2}$ one-time keys, as FIPS~205's $\mathsf{slh\_keygen\_internal}$, and returns
+$\Gen$ samples $\skseed\getsr\bits{256}$, derives $\skprf$ and $\pkseed$ as in Section~\ref{sec:parameters}, builds the top tree of $2^{h_2}$ one-time keys, as FIPS~205's $\mathsf{slh\_keygen\_internal}$, and returns
 \[
-  \pk=(\pkseed,\pkroot),\qquad \sk=S_0.
+  \pk=(\pkseed,\pkroot),\qquad \sk=\skseed.
 \]
 
 \subsection{Signing}
 \label{sec:sign}
 
-Given $\sk=S_0$ and a 256-bit message $M$, $\Sig(\sk,M)$ is FIPS~205's deterministic $\mathsf{slh\_sign\_internal}$:
+Given $\sk=\skseed$ and a 256-bit message $M$, $\Sig(\sk,M)$ is the deterministic $\mathsf{slh\_sign\_internal}$ of FIPS~205:
 \begin{enumerate}
 \item Derive $R=\PRFmsg(\skprf,\pkseed,M)$, the randomizer of deterministic signing, and extract $\idx$ and the leaves from $\Hmsg(R,\pkseed,\pkroot,M)$.
 \item Compute the opening $\FtsOpen(\idx,s)$ and $M_0=\FtsKey(\idx)$.
@@ -271,7 +271,7 @@ $\Ver(\pk,M,\sigma)$ rejects $\bot$ and malformed inputs. Otherwise, parse $\pk=
 \subsection{Serialization and cost}
 \label{sec:costs}
 
-Serialize the public key as $\pkseed\concat\pkroot$, 32 bytes. The secret key is $S_0$, 32 bytes.
+Serialize the public key as $\pkseed\concat\pkroot$, 32 bytes. The secret key is $\skseed$, 32 bytes.
 
 A signature is in FIPS~205's order, each layer's counter before its chain values: $R$, then the FORS signature in increasing tree, each tree's secret then its path in increasing height, then the layers from the bottom up, each $\BE_{32}(c_l)$, the $v$ chain values in increasing chain index and the path in increasing height. The size is
 \[
@@ -294,7 +294,7 @@ Count permutations of Keccak-f: an input of $r$ bytes costs $\lfloor r/136\rfloo
 \]
 permutations to verify: the inner hash of $\Hmsg$ and its two MGF1 calls; per FORS tree a leaf and 10 nodes; 4 for $\mathsf T_k$'s 432-byte input; one per encoding; per layer 64 chain steps and 8 for $\mathsf T_v$'s 1072-byte input.
 
-A one-time key takes $64$ derivations and $192$ chain steps, so its leaf $264$ permutations, and key generation, with the two hashes that derive the key seeds, $264\cdot2^{10}+(2^{10}-1)+2=271\,361$. Signing spends about $5.3\cdot10^5$: $271\,359$ for the top tree, which gives $\pkroot$ and the top path and which a signer may keep whole from key generation instead, $73\,708$ for the FORS instance, $135\,678$ for the two lower trees, and per layer about $14\,670$ encoding attempts, one permutation each.
+A one-time key takes $64$ derivations and $192$ chain steps, so its leaf $264$ permutations, and key generation, with the hash that derives $\pkseed$, $264\cdot2^{10}+(2^{10}-1)+1=271\,360$. Signing spends about $5.3\cdot10^5$: $271\,359$ for the top tree, which gives $\pkroot$ and the top path and which a signer may keep whole from key generation instead, $73\,708$ for the FORS instance, $135\,678$ for the two lower trees, and per layer about $14\,670$ encoding attempts, one permutation each.
 
 \section{Security}
 \label{sec:security}
@@ -304,7 +304,7 @@ Model $\hash$ as one shared random oracle. The challenger generates a key pair a
 The Lean~4 proof in \texttt{formal/lean\_sphincs/} (\texttt{FORS.h26\_layered}) establishes this bound, for $N=1\,182\,000\,000\approx2^{30.14}$, for the same shape with the scheme's earlier hash inputs: 16-byte little-endian addresses, two secrets derived per hash, a digest of two calls over $P\concat\addr\concat M\concat R$ read least significant bit first, and FORS trees without their root hash, whose key is their $2k$ top nodes. It does not cover the scheme of this document, whose FORS key, message hash, randomizer and key derivation differ in structure as well as in bytes.
 
 \paragraph{Hash domains.}
-Every hash call of the hypertree and of FORS hashes $\pkseed$ then an address naming it, its type among those of FIPS~205 or the encoding's own, so distinct such calls of one key never share an input, and calls of different keys differ in $\pkseed$. The calls without an address are FIPS~205's own ($\PRFmsg$, $\Hmsg$'s inner hash and its MGF1 calls) and the key seeds' derivation, whose 47-byte input no other call has the length of.
+Every hash call of the hypertree and of FORS hashes $\pkseed$ then an address naming it, its type among those of FIPS~205 or the encoding's own, so distinct such calls of one key never share an input, and calls of different keys differ in $\pkseed$. The calls without an address are FIPS~205's own ($\PRFmsg$, $\Hmsg$'s inner hash and its MGF1 calls) and the derivation of $\pkseed$ and $\skprf$, whose 43-byte input no other call has the length of.
 
 \paragraph{Quantum security.}
 \label{sec:quantum}

@@ -7,11 +7,11 @@ fn seed(x: u8) -> Seed {
 #[test]
 fn signatures_verify_and_tampered_ones_do_not() {
     let (sk, pk) = key_gen_from_seed(seed(3));
-    // SK.seed | SK.prf | PK.seed = MGF1("leanSPHINCS" || seed, 48).
-    let block = |c: u8| primitives::hash::hash(&[b"leanSPHINCS".as_slice(), &seed(3), &[0, 0, 0, c]].concat());
-    let expanded = [block(0), block(1)].concat();
+    // The seed is SK.seed, and PK.seed | SK.prf = H("leanSPHINCS" || SK.seed).
+    let derived = primitives::hash::hash(&[b"leanSPHINCS".as_slice(), &seed(3)].concat());
     let seeds = key_seeds(&seed(3));
-    assert_eq!([seeds.sk_seed, seeds.sk_prf, seeds.pk_seed].concat(), expanded[..3 * N]);
+    assert_eq!(seeds.sk_seed, seed(3));
+    assert_eq!([seeds.pk_seed, seeds.sk_prf].concat(), derived);
     assert_eq!(pk.pk_seed(), &seeds.pk_seed);
     assert_eq!(LeanSphincsSecretKey::from_bytes(&sk.to_bytes()).public_key(), pk);
     let message: Message = std::array::from_fn(|i| (3 + i) as u8);

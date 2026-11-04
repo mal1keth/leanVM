@@ -43,7 +43,7 @@ impl LeanSphincsPublicKey {
     }
 }
 
-/// The key's seed, all of the key: its [`key_seeds`] are FIPS 205's.
+/// `SK.seed`, all of the key: [`key_seeds`] derives the rest.
 #[derive(Clone)]
 pub struct LeanSphincsSecretKey {
     seed: Seed,
@@ -380,9 +380,8 @@ pub fn verify(
 mod tests {
     use super::*;
 
-    /// A known answer, byte for byte, of everything below the key seeds: the key
-    /// whose `SK.seed | SK.prf | PK.seed` is `S[i] = 37 i + 11` and its signature
-    /// of `m[i] = 7 i + 3`.
+    /// A known answer, byte for byte: the key whose `SK.seed` is `S[i] = 37 i + 11`
+    /// and its signature of `m[i] = 7 i + 3`.
     #[test]
     fn known_answer() {
         let mut lines = include_str!("known_answer.hex").lines();
@@ -394,7 +393,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let (pk_bytes, sig_bytes) = (unhex(), unhex());
-        let master = KeySeeds::from_bytes(&std::array::from_fn(|i| (37 * i + 11) as u8));
+        let master = key_seeds(&std::array::from_fn(|i| (37 * i + 11) as u8));
         let pk = public_key_of(&master);
         let message: Message = std::array::from_fn(|i| (7 * i + 3) as u8);
         assert_eq!(pk.to_bytes()[..], pk_bytes[..]);
