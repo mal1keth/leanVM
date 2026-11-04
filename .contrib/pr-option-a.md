@@ -1,34 +1,35 @@
-<!-- Draft PR for leanEthereum/leanVM, option A of #529. Open it only after the maintainers answer the #529 comment. Cut the branch from upstream main and cherry-pick the implementation commit; .contrib/ stays out. -->
+<!-- Draft PR for leanEthereum/leanVM, option A of #529. Open it only after the maintainers answer the #529 comment. Cut the branch from upstream main and squash the implementation commits (3aa2f33 and its correction) into one, with this file's first section as the message; .contrib/ stays out. -->
 
-# Fiat-Shamir: the transcript's security argument, and a test pinning what it rests on
+# Fiat-Shamir: what the transcript's security rests on, and a test pinning it
 
-Closes the `main` half of #529, if the maintainers agree it is the target there.
+For #529, if the maintainers agree `main` is the target there.
 
 ## What
 
-`main`'s transcript, the overwrite-mode duplex over Keccak-f[1600] from #636, had a description in §8 (`sec:e2e-fiat-shamir`) but no security argument. This adds one, and no code: the transcript already is the duplex-sponge Fiat-Shamir transformation (DSFS) of Chiesa and Orrù (TCC 2025, ePrint 2025/536), so their Theorem 6.1 applies.
+`main`'s transcript, the overwrite-mode duplex over Keccak-f[1600] from #636, had a description in §8 (`sec:e2e-fiat-shamir`) and no security argument. This adds what can be said now, and no code.
 
-- **Spec**, §8: a "Security" paragraph. The instance is (IV, public input, announced sizes); the seed and the size absorptions are CO25's start with `h = p`; each challenge ends a round; the codec is the tagged lanes zero-padded to whole rates, and the first three lanes of a squeezed rate, unbiased on GF(2^192). Theorem 6.1 then bounds the soundness error by the protocol's state-restoration error plus `25 N²/2^576` for `N` queries to Keccak-f. Round-by-round soundness (Annex B) implies state-restoration soundness, so the existing per-round errors carry over unchanged.
-- **Test**, `only_the_sizes_shape_the_transcript` in `leanvm_core/tests/verifiers`: the argument needs every absorb and squeeze count to follow from the bytecode and the announced sizes alone. The test changes every scalar after the sizes, and so every challenge, and checks that `replay_unchecked` still reads the stream and the openings exactly to their end, with the Keccak reduction's scalars where they were.
+- **Spec**, §8, a "Security" paragraph. For a fixed bytecode length and fixed announced sizes, the transcript is the duplex-sponge Fiat-Shamir transformation (DSFS) of Chiesa and Orrù (TCC 2025, ePrint 2025/536): the seed and the size absorptions are their start with `h = p`, each challenge ends a round, and the codec is the tagged lanes zero-padded to whole rates and the first three lanes of a squeezed rate, unbiased on GF(2^192). It then names the two steps CO25 does not contain (a prover choosing the sizes; Merkle hashing on the same Keccak-f), the resulting bound, and its scope: state-restoration soundness is established only for the opening, grinding is not credited (the query phases give 111 bits without it), and the argument is classical, in the ideal-permutation model, for one proof.
+- **Test**, `only_the_sizes_shape_the_transcript` in `leanvm_core/tests/verifiers`: the mapping needs every absorb and squeeze count to follow from the bytecode and the announced sizes alone. The test changes every scalar after the sizes, and so every challenge, and checks that `replay_unchecked` still reads the stream and the openings exactly to their end, with the Keccak reduction's scalars where they were.
 - **AGENTS.md**: the invariant joins the Fiat-Shamir convention.
 - **refs.bib**, **macros.tex**: CO25, CY24, and `\fsq` for the query count.
 
 ## Why no framing
 
-The duplex has one non-injectivity: a permutation forced by a fifth absorbed scalar equals one drawn for a challenge with four waiting. SAFE closes that shape with an IO-pattern tag. CO25 shows no tag is needed when the instance fixes the round structure ("DSFS does not hash lengths/labels … our results guarantee this is secure"), and here it does. #552 needed framing for a different reason: BLAKE2s compression is not a permutation, so its argument goes through a hashing-mode theorem (DMV18) instead.
+The duplex has one non-injectivity: a permutation forced by a fifth absorbed scalar equals one drawn for a challenge with four waiting. For a fixed shape CO25 needs no framing ("DSFS does not hash lengths/labels … our results guarantee this is secure"). Framing would not remove the first gap either: #552's argument also reconstructs the schedule from the parsed announcement. It would close the second, by separating transcript hashing from Merkle hashing.
 
 ## Checks
 
 - `cargo test --release -p leanvm_core --test verifiers`: all pass, the Python verifier's included.
-- The test fails, and only it, under a mutation of `crates/verifier` that reads one extra scalar in a replay depending on a bit of the commitment root (a value-dependent schedule the honest proof does not trigger).
+- The new test fails, and only it, under a mutation of `crates/verifier` that reads one extra scalar in a replay depending on a bit of the commitment root (a value-dependent schedule the honest proof does not trigger).
+- A literal implementation of CO25's Construction 3.3 under the codec above reproduces the permutation inputs and challenges of the Python verifier and of mirrors of the Rust prover and verifier on 6,000 random schedules.
 - `latexmk -pdf main.tex`: builds, no undefined references, no new overfull boxes.
 - `cargo fmt --all -- --check`, `cargo clippy --release -p leanvm_core --all-targets -- -D warnings`: clean.
 
 ## Not covered
 
+- The extension of CO25's reduction to a prover-chosen shape is stated, not proved.
 - The test pins reads, not challenge counts: an extra squeeze changes no read, and nothing in the verifier's output counts permutations. Every squeeze count in `crates/verifier` is a layout constant today.
-- Grinding is credited nothing, and Merkle openings rest on PCS binding, as in #552.
-- Knowledge soundness (Theorem 6.2, rewinding) is not discussed; recursion's needs there are a separate question.
+- The recursion's batching transcript has the same shape but is not part of the mapping.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 

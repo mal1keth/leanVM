@@ -1,123 +1,135 @@
-# Fiat-Shamir on `main`: the transcript is CO25's duplex-sponge Fiat-Shamir
+# Fiat-Shamir on `main`: how far CO25's duplex-sponge Fiat-Shamir covers the transcript
 
-Draft for [leanEthereum/leanVM#529](https://github.com/leanEthereum/leanVM/issues/529), against upstream `main` at `23a305b` (2026-11-04). Not yet reviewed by the maintainers.
+Notes for [leanEthereum/leanVM#529](https://github.com/leanEthereum/leanVM/issues/529), against upstream `main` at `23a305b` (2026-11-04). Revised after an adversarial review that found the first version overclaimed (§9). Not yet reviewed by the maintainers.
 
-Code links below are permalinks to that commit. `P` abbreviates `https://github.com/leanEthereum/leanVM/blob/23a305b017a5c553c2a62ecdbd6fc49e06849df4`.
+`P` abbreviates `https://github.com/leanEthereum/leanVM/blob/23a305b017a5c553c2a62ecdbd6fc49e06849df4`.
 
 ## Summary
 
-- #529 (Oct 7) was opened while `main`'s transcript was a BLAKE2s hash chain, not a duplex. On `riscv-exploration`, #552 (Oct 10) rebuilt that line's transcript as a framed BLAKE2s duplex with a written argument (DMV18), and the unmerged `spongefish-fs` put spongefish's interface on top. `main` went another way: #636 (merged Oct 23) replaced the chain with an unframed duplex over Keccak-f[1600], after Plonky3's challenger. Nothing in the spec argues its security.
-- `main`'s duplex has exactly one non-injectivity: a permutation forced by a fifth absorbed scalar is the same permutation as a challenge drawn with four scalars waiting. SAFE lists this shape as a misuse and closes it with an IO-pattern tag. CO25 closes it differently, with no tag, by requiring the round structure to be fixed by the instance.
-- `main` already meets CO25's conditions. Every count the verifier absorbs or samples is a function of the bytecode (hashed into the IV) and the announced sizes (absorbed right after the seed). Taking the instance to be (IV, public input, sizes), `main`'s transcript is DSFS (CO25, Construction 4.3) over Keccak-f with an injective, unbiased codec, and Theorem 6.1 gives `ε_NARG ≤ ε_sr_IP + 25t²/2^576`. This needs no code change. What is missing is the written argument and a test pinning its one load-bearing invariant.
-- #552 says CO25 and SAFE do not apply. That is right for BLAKE2s compression, which is not a permutation. On `main` the primitive is a permutation, so CO25 applies directly, and the argument survives replacing Keccak by any other permutation.
-- Measured in the recursion guest (2→1, leaves of 900 leanXMSS, log-inv-rate 2): about 922 Fiat-Shamir permutations per child verified, about 15% of the root's `KECCAK` instructions. Squeezing five challenges per permutation would save about 12% of them, about 2% of the root's `KECCAK`s.
+- **History.** #529 (Oct 7) was opened the day after #523 put an unframed, duplex-style transcript step on `riscv-exploration`. #552 (Oct 10) replaced that step with a framed BLAKE2s duplex and a written argument, and #607 and #620 followed. `main` kept a BLAKE2s hash chain until #636 (merged Oct 23) replaced it with an unframed duplex over Keccak-f[1600], after Plonky3's challenger. Nothing in the spec argues that duplex's security.
+- **One ambiguity.** `main`'s duplex has exactly one non-injectivity: a permutation forced by a fifth absorbed scalar is the same permutation as a challenge drawn with four scalars waiting. A brute force over all 265,720 operation sequences of length at most 11 finds no other.
+- **Why it does not bite.** Every count of absorbed scalars and squeezed challenges, and their order, is fixed by the bytecode (hashed into the IV) and the eight announced sizes (absorbed right after the seed, before any challenge). Values never change it.
+- **What CO25 gives.** For each fixed bytecode length and fixed sizes (a "shape"), `main`'s transcript is CO25's DSFS (Construction 4.3) with an injective, unbiased codec; a literal implementation of Construction 3.3 reproduces `main`'s permutation inputs on 6,000 random schedules.
+- **Two gaps to a theorem for `main` as deployed.** (1) CO25 fixes round lengths by the security parameter and the instance-size bound (Definition 4.1), so a prover who chooses the sizes needs an extension of its reduction. The sizes being a fixed-length prefix absorbed before any round makes this plausible; it is not written down. (2) The Merkle openings bring in CO25's BCS form (§2.6, Corollary 1, stated informally), which adds a Merkle term and keeps the Merkle hash separate from the permutation; on `main` both run on Keccak-f.
+- **What the transcript is not responsible for.** End-to-end state-restoration soundness is not established in the spec (Annex B proves round-by-round errors for the opening only), and WHIR's query counts assume 17 bits of grinding, which no Fiat-Shamir argument here credits.
+- **Scope.** All of this is classical, in the ideal-permutation model, for one proof. It does not address KRS25-style attacks (the recursion guest evaluates Keccak-f itself), quantum adversaries, or recursion's need for knowledge soundness, beyond noting CO25's Theorem 6.2.
+- **Cost.** In the recursion guest (2→1, leaves of 900 leanXMSS, log-inv-rate 2), Fiat-Shamir is 921 permutations per child verified after the seed, about 1,840 of the root's roughly 12,700 `KECCAK` instructions. Squeezing five challenges per permutation would save 12% of those, about 2% of the root's `KECCAK`s.
 
 ## 1. History
 
 | when | where | transcript |
 | --- | --- | --- |
-| until Oct 14 | `main` | BLAKE2s chain: `cv ← BLAKE2s(cv ‖ x ‖ tag)`, one compression per absorbed scalar and per challenge; a challenge is three of the four words of the new `cv` |
+| until Oct 23 | `main` | BLAKE2s chain: `cv ← BLAKE2s(cv ‖ x ‖ tag)`, one compression per absorbed scalar and per challenge; a challenge is three of the four words of the new `cv` |
+| Oct 6 | `riscv-exploration`, #523 (kevaundray) | "The Fiat-Shamir step is one compression keyed by the state, absorbing up to two scalars; a squeeze absorbs the waiting ones in its own step." |
 | Oct 7 | #529 opened | "the duplex construction looks insecure" (attributed to Khovratovich). Relayed ask: a duplex over Blake2s/2b supporting long absorb-squeeze patterns, fewest compression calls, 128 bits provable in the CO25 or SAFE paradigm |
-| Oct 10 | `riscv-exploration`, #552 (kevaundray) | framed BLAKE2s duplex with "conditional mode security": DMV18 Theorem 1 for the mode, a round-by-round adapter via CCHLRR18; a section "Why not directly CO25 or SAFE" (BLAKE2s compression is not a permutation) |
-| Oct 10 to 11 | `spongefish-fs` (Thomas Coratger), unmerged | spongefish v0.8 / draft-irtf-cfrg-fiat-shamir-03 interface over that duplex |
-| Oct 14, merged Oct 23 | `main`, `b92ca6ba` in #636 | duplex sponge over Keccak-f[1600] in overwrite mode, "after Plonky3's duplex challenger". #636's description in full: "Keccak is still still a placeholder, for now." Neither mentions #529 |
+| Oct 10 | `riscv-exploration`, #552 (kevaundray) | framed BLAKE2s duplex with "conditional mode security": DMV18 Theorem 1 for the mode, a round-by-round adapter via CCHLRR18, and a section "Why not directly CO25 or SAFE" (BLAKE2s compression is not a permutation) |
+| Oct 11, Oct 13 | `riscv-exploration`, #607, #620 (Thomas Coratger) | a spongefish-style transcript over that duplex; then "messages sent under a one-time pad" |
+| merged Oct 23 | `main`, #636 | duplex sponge over Keccak-f[1600] in overwrite mode, "after Plonky3's duplex challenger" (`b92ca6ba` on the PR branch, Oct 14, first over the VM's SHA3 step, plain Keccak-f from `e471f70d`, Oct 21). #636's description calls Keccak a placeholder for now. Neither mentions #529 |
 
-On Oct 7 `main` had no duplex, so whatever was reviewed, `main`'s transcript today is newer than the review.
+So the construction #529 most plausibly refers to is #523's step, and #552 is its author's own answer on `riscv-exploration`. `main`'s transcript is newer than all of it.
 
 ## 2. The construction on `main`
 
-The state is 25 lanes of 64 bits: the rate is lanes `0..16` (`r = 16`), the capacity lanes `16..25` (`c = 9`, 576 bits). The alphabet is a lane, `Σ = {0,1}^64`.
+The state is 25 lanes of 64 bits: the rate is lanes `0..16`, the capacity lanes `16..25` (576 bits).
 
 - **Seed.** From the zero state, lanes `0..4` take the IV, `Keccak-256("leanvm-v1" ‖ bytecode table)`, and lanes `4..8` the 256-bit public input; one permutation; the rate is zeroed.
 - **Absorb.** A sent scalar of `E = GF(2^192)` waits; the `k`-th waiting scalar is written as `(c0, c1, c2, tag)` over lanes `4k..4k+4`, tag `1` for a sent scalar and `4` for a grinding nonce. A fifth scalar first permutes the four waiting.
-- **Sample.** Permute with whatever waits, the rate past it zeroed; the challenge is lanes `0..3` of the output; the rate is zeroed. Every challenge is a permutation of its own.
-- **Grinding.** Absorb the nonce (tag 4) and sample; that challenge's low `b` bits must be zero, `b = 17` before WHIR's queries; with `b = 0` the nonce must be zero.
+- **Sample.** Permute with whatever waits, the rate past it zeroed; the challenge is lanes 0, 1, 2 of the output; the rate is zeroed.
+- **Grinding.** Absorb the nonce (tag 4) and sample; that challenge's low `b` bits must be zero (`b = 17` before WHIR's queries); with `b = 0` the nonce must be zero. The nonce is always the last scalar before its challenge.
 - **Not absorbed:** Merkle openings. Their roots are absorbed, as two scalars each.
 
-Four implementations agree: the prover's [`FiatShamirState`](P/crates/fiat_shamir/src/lib.rs#L51-L194), the native verifier's [`Sponge`](P/crates/verifier/src/transcript.rs#L32-L90), the [Python verifier](P/python-verifier/verifier.py#L354-L424), and the [guest](P/crates/rec_aggregation/guests/lean_ethereum.py#L515-L633), which replays each permutation as one `KECCAK` instruction with the number of waiting scalars a compile-time constant at every site. The spec's description is [§8, `sec:e2e-fiat-shamir`](P/doc/leanvm/body/08-end-to-end-protocol.tex#L63-L75); it describes the construction and argues nothing about it.
+Four implementations agree: the prover's [`FiatShamirState`](P/crates/fiat_shamir/src/lib.rs#L51-L194), the native verifier's [`Sponge`](P/crates/verifier/src/transcript.rs#L32-L90) and [`grind_check`](P/crates/verifier/src/transcript.rs#L151-L167), the [Python verifier](P/python-verifier/verifier.py#L354-L424), and the [guest](P/crates/rec_aggregation/guests/lean_ethereum.py#L515-L633), which replays each permutation as one `KECCAK` instruction. The spec describes the construction in [§8, `sec:e2e-fiat-shamir`](P/doc/leanvm/body/08-end-to-end-protocol.tex#L63-L75) and argues nothing about it.
 
-Other transcripts share the seed shape `(H(x), y)`: the aggregation statement, `from_label("leanvm/recursion-aggregation/v1")`, and LeanDA's challenge, `(H("leanDA/rs-membership/v1"), root)`. These preimages and `"leanvm-v1" ‖ bytecode` differ within their first seven bytes and `TAG` has a fixed length, so no two seeds coincide.
+Other transcripts share the seed shape `(H(x), y)`: the recursion's deferred-claim batching, `from_label("leanvm/recursion-aggregation/v1")`, and LeanDA's challenge, `(H("leanDA/rs-membership/v1"), root)`; `verify_keccak_batch` (bench and tests) takes a caller's IV. The labels differ from `TAG` within their first seven bytes and `TAG` has a fixed length, so no two production seeds coincide.
 
-## 3. The collision
+## 3. The ambiguity
 
-Let `B` be four waiting scalars. Then `observe B, observe y, sample` and `observe B, sample, observe y, sample` feed the permutation the same inputs and end on the same challenge: the first discards a permutation output that the second calls a challenge. The sponge sees a sequence of rate blocks, not a sequence of operations, and a full block does not record whether a challenge was drawn from its output. The tags rule out every other ambiguity, such as `k` scalars against `k` scalars and a zero (`fs_binds_length`), so this is the only one.
+Let `B` be four waiting scalars. Then `observe B, observe y, sample` and `observe B, sample, observe y, sample` feed the permutation the same inputs and end on the same challenge: the first discards a permutation output that the second calls a challenge. The sponge sees a sequence of rate blocks, not of operations, and a full block does not record whether a challenge was drawn from its output. The tags rule out everything else (`k` scalars against `k` scalars and a zero: `fs_binds_length`); [`checks/collisions.py`](checks/collisions.py) confirms symbolically, over every sequence of observes, nonces and samples of length at most 11, that this rule explains every collision.
 
-Exploiting it needs a verifier that, at the same point of the same transcript, could either draw a challenge or read another scalar. SAFE's misuse list names the shape: "When the input data fills the full rate, no padding or any other length-dependent separator is applied." The rest of this note shows `main`'s verifier never faces that choice, and that this is exactly CO25's hypothesis.
+Exploiting it needs a verifier that, at one point of one transcript, could either draw a challenge or read another scalar. SAFE's list of misuses names the shape: "When the input data fills the full rate, no padding or any other length-dependent separator is applied." The question is whether `main`'s verifier ever faces that choice.
 
-## 4. Why it is harmless: `main` is an instance of DSFS
+## 4. How far CO25 goes
 
-CO25 (Chiesa and Orrù, *A Fiat-Shamir Transformation From Duplex Sponges*, TCC 2025, ePrint 2025/536) analyses DSFS (Construction 4.3) over the overwrite-mode duplex of Construction 3.3, with an ideal permutation. Its hypotheses: a public-coin IP of `k` rounds, each a prover message then a verifier message; a codec (Definition 4.1) fixing per-round lengths `ℓP(i)`, `ℓV(i)` from `(λ, n)`, with injective encodings `φi` and decodings `ψi` of bias `ε_cdc,i`; and a start state depending only on the instance. It deliberately hashes no framing: "DSFS does not hash lengths/labels of the prover and verifier messages (our results guarantee this is secure)" (§2.2), and it "avoids the use of padding or IO patterns" (§1).
+CO25 (Chiesa and Orrù, *A Fiat-Shamir Transformation From Duplex Sponges*, TCC 2025, ePrint 2025/536 revised 2026-03-27) analyses DSFS (Construction 4.3) over the overwrite-mode duplex of Construction 3.3, with an ideal permutation. It hashes no framing: "DSFS does not hash lengths/labels of the prover and verifier messages (our results guarantee this is secure)" (§2.2), and it "avoids the use of padding or IO patterns" (§1). What it needs instead is a codec (Definition 4.1), "a function cdc that maps every security parameter λ ∈ N and instance size bound n ∈ N to a tuple cdc(λ, n) = (ℓP, ℓV, φ, ψ)": the length of every round is fixed in advance.
 
-Map `main` onto it with `Σ = {0,1}^64`, `r = 16`, `c = 9`, `p = Keccak-f[1600]`, and salt `δ = 0` (proofs are not zero knowledge).
+Map `main` onto it with an alphabet of 64-bit lanes, rate 16, capacity 9, `p` = Keccak-f[1600], and no salt (proofs are not zero knowledge).
 
 ### 4.1 Instance and start
 
-Take the instance `x' = (IV, pi, a)`, where `a` is the eight announced sizes: the memory log-size, the six row counts and the log-inverse-rate, each with zero high limbs (the verifier rejects otherwise, `AnnouncedHighLimb`). Let `Start(x') = Absorb(st*, φ0(x'))` from the zero state `st*`, with
+The instance is `x = (bytecode, public input, a)`, with `a` the eight announced sizes: the memory log-size, the six row counts and the log-inverse-rate, each with zero high limbs (the verifier rejects otherwise). The bytecode enters the sponge through its digest, the IV, so the argument also pays for an IV collision, about `t²/2^256`. Take `Start(x) = Absorb(st*, φ0(x))` from the zero state, with
 
-`φ0(x') = IV ‖ pi ‖ 0^8 ‖ (a_j, 0, 0, 1) for j = 0..8`,
+`φ0(x) = IV ‖ pi ‖ 0^8 ‖ (a_j, 0, 0, 1) for j = 0..8`,
 
-48 lanes. Absorbing them in Construction 3.3 performs exactly `main`'s seed permutation followed by the two permutations its absorbed sizes trigger: each block overwrites the whole rate, so `main`'s zeroing of the rate is invisible. CO25 covers a start by absorption from a fixed state "as a special case (with h = p)" (§2.2, after Remark 2.1).
+48 lanes. In Construction 3.3, absorbing them performs two permutations: `main`'s seed permutation, and the one the fifth size forces. The last four sizes wait in the rate, exactly as on `main`, where the commitment root's first half permutes them; in CO25 the same happens when round 1's first lane arrives. CO25 states informally that its analysis "covers, as a special case, the particular choice where DS.Start^h(x) = DS.Absorb^p(st*, φ0(x)) (with h = p)" (§2.2, after Remark 2.1).
 
-The sizes come from the proof, so the prover chooses `x'`. CO25's soundness is adaptive in the instance (the state-restoration prover outputs `x`, Definition 3.12), and a false statement `(bytecode, pi)` stays false under every `a`, so this costs nothing.
+### 4.2 Rounds and codec, for a fixed shape
 
-### 4.2 Rounds and codec
+Number the challenges `main` draws `σ_1, …, σ_k`, the proof-of-work challenges included. Round `i`'s prover message is the `m_i` scalars absorbed between `σ_{i−1}` and `σ_i` (between the start and `σ_1` for `i = 1`), and its verifier message is `σ_i`.
 
-Number the challenges `main` draws `σ_1, …, σ_k`, grinding challenges included. Round `i`'s prover message is the `m_i ≥ 0` scalars absorbed between `σ_{i−1}` and `σ_i` (between the start and `σ_1` for `i = 1`), and its verifier message is `σ_i`.
+- `φ_i`: each scalar as `(c0, c1, c2, tag)`, tag 1 for a sent scalar and 4 for the grinding nonce, which is always the last scalar of its round; then zero lanes up to a multiple of 16. An empty message of a round `i ≥ 2` is sixteen zero lanes. Round 1 is never empty on `main`: it opens with the commitment root.
+- `ψ_i`: squeeze 16 lanes and keep lanes 0, 1, 2. Three 64-bit lanes are a bijection onto `GF(2^192)` and the projection has equal fibres, so the decoding has no bias.
 
-**The load-bearing fact: `k` and every `m_i` depend on `x'` alone.** Every count the native verifier reads or samples is a constant or comes from the layout that [`build_layout(bytecode, log_memory, table_rows)`](P/crates/verifier/src/lib.rs#L229-L247) and the log-inverse-rate determine: the bus GKR's `1 << step` and `samples(step)`, `samples(BUS_BITS)`, each table's `width()`, the Keccak reduction's `segments()`, `PRODUCT_BITS`, `LANE_BITS` and `K_BITS`, the ring switch's shifts, and WHIR's fold counts, `message_log`, residual size and query count. `sample_queries` draws `⌈count / ⌊192/depth⌋⌉` challenges with `depth` from the layout. No count depends on a challenge, on a sent scalar's value other than `a`, or on Merkle data, which feeds only arithmetic. The guest says the same thing structurally: the number of waiting scalars is a compile-time constant at every Fiat-Shamir site.
+Against Construction 3.3, step by step: a nonempty round ends on a block boundary, so its last block overwrites the whole rate and the squeeze permutes, which is `main`'s sample with the rate past the waiting scalars zeroed; when the 17th lane of a round arrives, Absorb permutes first, which is `main`'s fifth scalar; an empty round writes sixteen zeros over the previous challenge's output and the squeeze permutes `(0^16, capacity)`, which is `main`'s sample with nothing waiting; every Absorb sets `i_S = r` and every Squeeze sets `i_A = 0`, so the next operation behaves as on `main`.
 
-The codec:
+[`checks/co25_equivalence.py`](checks/co25_equivalence.py) runs Construction 3.3 literally under this codec, against the Python verifier's `Transcript` and line-by-line mirrors of the Rust prover and verifier, with a stand-in permutation and with real Keccak-f. Permutation inputs and challenges match on all 6,000 random schedules with sizes (3,000 of them with raw nonces). With an empty round 1 encoded as sixteen zeros instead, every mismatch has an empty round 1, the case `main` never reaches.
 
-- `φ_i`: each scalar as its tagged lanes `(c0, c1, c2, 1)`, then zero lanes up to a multiple of 16; for `m_i = 0`, sixteen zero lanes. Injective, since `ℓP(i)` is fixed.
-- `ψ_i`: read 16 lanes and keep lanes `0..3` as an element of `E`. Three 64-bit lanes are a bijection onto `GF(2^192)`, so the bias is zero.
+Splitting a run of consecutive challenges into rounds with empty prover messages loses nothing: in CO25's state-restoration game a verifier message is `ρ_i := f_i(x, τ, α_1, …, α_i)`, a function of the prover-message prefix (Definition 3.12), and an empty message has a single value.
 
-Checked against Construction 3.3, step by step:
+### 4.3 The schedule
 
-- A message of `m_i ≥ 1` scalars ends on a block boundary, so its last block overwrites the whole rate, and the squeeze then permutes. That is `main`'s sample with the rate past the waiting scalars zeroed.
-- When a fifth element arrives with `i_A = r`, Absorb permutes, then writes. That is `main`'s fifth scalar.
-- An empty message writes sixteen zeros over the previous output, and the squeeze permutes `(0^16, capacity)`. That is `main`'s sample with nothing waiting.
-- Squeezing 16 lanes leaves `i_S = r`, so a later squeeze permutes first, and Squeeze sets `i_A = 0`, so a later absorb starts at lane 0. Both match `main`.
+The mapping needs `k` and every `m_i` to be fixed once the shape is. On `main` they are: no count or order of absorbed scalars and squeezed challenges depends on a challenge, on a sent value other than the sizes, or on Merkle data. In `walk()`, which `verify_execution` and `replay_unchecked` share, every count is a constant or comes from the layout that [`build_layout(bytecode, log_memory, table_rows)`](P/crates/verifier/src/lib.rs#L229-L247) and the log-inverse-rate determine: for example the bus GKR's `1 << step`, each table's `width()`, the table sumcheck's rounds, and WHIR's fold counts, residual size and query count; `sample_queries` draws `⌈count / ⌊192/depth⌋⌉` challenges with `depth` from the layout and does no rejection or deduplication. Values feed checks, and a failed check only ends the walk; Merkle data never enters the sponge (the pruned form deduplicates positions, but only to expand the openings).
 
-Splitting a run of consecutive challenges into rounds with empty prover messages loses nothing. In CO25's state-restoration game a verifier message is `ρ_i := f_i(x, τ, α_1, …, α_i)`, a function of the prover-message prefix (Definition 3.12), and an empty message has a single value, so a state-restoration prover against the split IP is one against the batched IP with no more moves.
+Three independent confirmations: a trace of the Python verifier with its checks disabled gives the same operation sequence for a zero stream and for random streams, and a different `log_memory` changes it; the guest's runtime loops and branches around Fiat-Shamir sites are bounded by values pinned to the absorbed sizes (the bus GKR's first layer takes the two waiting roots from record cells that later layers zero); and `only_the_sizes_shape_the_transcript` (on this branch) changes every scalar after the sizes and checks that the replay still reads the stream and the openings exactly to their end. That test fails, alone, under a mutation that makes one read depend on a bit of the commitment root. It pins reads, not squeeze counts.
 
-### 4.3 Outside the IP
+### 4.4 Gap 1: a prover who chooses the shape
 
-- **Merkle openings** are not absorbed. They are bound by their roots, which are, and the PCS binding argument covers them; #552 treats them the same way.
-- **Grinding.** The nonce is a round's prover message (tag 4) and the proof-of-work challenge is its verifier message. The check only adds a reason to reject, so the bound below holds without crediting grinding at all. Crediting it needs a separate proof-of-work argument, which #552 also leaves out.
+Definition 4.1 fixes `k`, `ℓP(i)` and `ℓV(i)` by `(λ, n)`; CO25's message spaces "may be functions of, e.g., the instance size" (§3). On `main` they vary with the bytecode's length and the sizes at a fixed `n`. So §4.2 shows that `main` is DSFS for each fixed shape, and CO25's adaptivity (the state-restoration prover outputs the instance, Definition 3.12) does not let the codec depend on the instance.
 
-### 4.4 The bound
+A union bound over shapes would cost soundness bits. The natural extension of CO25's §5 reduction: the shape is fixed by the 48-lane prefix absorbed before any round, so the reduction can recover it from the first three blocks of each permutation chain before parsing the rest with that shape's lengths. #552's argument needs the same step for its mode ("The verifier's deterministic schedule, reconstructed from its statement and parsed announcement/message prefix"). This extension is plausible and not written anywhere.
 
-CO25 Theorem 6.1: `ε_NARG(λ, t, n) ≤ ε_sr_IP(δ*, t, n) + 25t²/|Σ|^c + t · max_i ε_cdc,i + Σ_i ε_cdc,i`, for `t` queries to `p` and `p⁻¹`. Here `|Σ|^c = 2^576` and both bias terms are zero, so the transcript adds `25t²/2^576`, below `2^-315` at `t = 2^128`. Theorem 6.2 gives the same additive term for rewinding knowledge soundness.
+### 4.5 Gap 2: Merkle openings on the same permutation
 
-So the transcript is not where soundness is decided. It is decided by the IP's state-restoration soundness, which is where the per-round errors of §8 and Annex B belong, round by round.
+Theorem 6.1 covers interactive proofs without oracles. leanVM is a Merkle-compiled IOP, which CO25 covers in §2.6: "BCS[IOP] = DSFS[iBCS[IOP], cdc]", "(The compression function for the Merkle commitment remains.)", with Corollary 1 (informal): `ε_NARG(t) ≤ ε_sr_IOP(t) + κ_MT(t, l, (t+1)·k, k) + 25t²/|Σ|^c + t·max_i ε_cdc,i + Σ_i ε_cdc,i`.
 
-### 4.5 What has to stay true
+The roots are absorbed before the challenges that choose the queries on them, and the openings are never absorbed, as in #552, so they fit as an unabsorbed final round entering through `κ_MT` (the PCS is list-binding, so extractability, not binding, is the property). But `main`'s Merkle trees hash with Keccak-256, on the same Keccak-f as the duplex, and nothing separates the two: a prover-chosen leaf can make a Merkle hash evaluate the transcript's own permutation inputs. That is not an attack (the adversary can query the permutation anyway), but the composition is outside CO25, whose corollary assumes a separate hash. Treating Keccak-256 as a separate random oracle is the standard assumption; #552 avoids it by keeping transcript and Merkle nodes in disjoint frames.
 
-1. Every count the verifier reads or samples is a function of the bytecode and the announced sizes. A count depending on a challenge or a message value would make the round structure prefix-dependent, outside Definition 4.1, and is exactly where the collision of §3 could bite.
-2. The sizes are absorbed before anything they size.
+### 4.6 The resulting bound, if the extension holds
+
+`ε_NARG(t) ≤ ε_sr_IOP(t) + κ_MT + (IV collision) + 25t²/2^576`, for `t` queries to Keccak-f in either direction, Merkle, IV and proof-of-work evaluations included. The sponge's own term is below `2^-315` at `t = 2^128`; the Merkle and IV terms are birthday-scale in 256 bits and dominate the hash loss. Theorem 6.2 gives the analogous bound for rewinding knowledge soundness, with the failure probability shifted by the same additive term.
+
+### 4.7 What this does not cover
+
+- **State-restoration soundness of the protocol.** CO25 notes that round-by-round soundness implies it [CY24]. Annex B proves round-by-round errors for the PCS opening only; the bus, the sumchecks, the Keccak GKR and the ring switch carry plain soundness errors, with no union over the list-binding commitment's list. Composing them into `ε_sr_IOP` is open work, independent of the transcript.
+- **Grinding.** The bound credits none. WHIR's query counts are sized so that "the query count only needs to close the remaining `SECURITY_BITS - 17` bits" (`crates/pcs/src/whir_config.rs`), so without a proof-of-work argument the query phases give about 111 bits.
+- **Scope.** Classical, ideal permutation, one proof. Not KRS25-style attacks, where the proven computation evaluates the Fiat-Shamir hash (the recursion guest evaluates Keccak-f, and the signatures use Keccak); not quantum adversaries (CO25 §1.3: "Establishing the security of DSFS against superposition queries to the permutation function remains a challenging open question"). For signature aggregation, plain soundness says little (for an honestly generated key, a valid signature exists for every message); knowledge soundness is what matters, and recursion needs it to compose.
+- **The recursion's batching transcript** (`from_label(RECURSION_AGG_LABEL)`) has the same shape (child count absorbed first, every child padded to whole rates) but is not part of this mapping.
+
+### 4.8 What has to stay true
+
+1. Every count and the order of absorbed scalars and squeezed challenges follow from the bytecode and the announced sizes.
+2. The sizes, and then the commitment root, are absorbed before any challenge.
 3. The codec stays injective per round: nonzero tags, or any other fixed-length encoding.
-4. Distinct transcripts keep distinct seeds (`TAG` fixed-length and first, labels distinct).
-5. The primitive stays a permutation modelled as ideal. Replacing Keccak by another permutation keeps the argument; replacing it by a compression function does not, which is #552's case.
+4. No seed preimage other than the VM's begins with `TAG`.
+5. The primitive stays a permutation modelled as ideal.
 
-None of these is written down or tested today.
+(1) and (2), the two the argument rests on, were neither written down nor tested; this branch adds the AGENTS.md rule and the test. (3) and part of (4) are already stated in §8, and (3) is tested by `fs_binds_length`.
 
 ## 5. Comparison
 
-| | `main` | CO25 DSFS (spongefish) | SAFE | #552 (`riscv-exploration`) |
-| --- | --- | --- | --- | --- |
-| primitive | Keccak-f, `r = 16`, `c = 9` lanes | ideal permutation | permutation over a field | BLAKE2s compression, not a permutation |
-| absorb | overwrite, rate past the block zeroed | overwrite | add | framed compression nodes |
-| framing | a tag lane per scalar, none between absorb and squeeze | none | IO-pattern tag `T = H(pattern ‖ D)` in the capacity | role, length and consumed-output counter per node |
-| what fixes the schedule | bytecode in the IV, sizes absorbed first | the IP's round structure, via the codec | the declared IO pattern | the counter |
-| squeeze | one challenge per permutation | the whole rate | the whole rate | 32-byte output blocks, unused bytes kept |
-| argument | none written; CO25 Theorem 6.1 applies (§4) | Theorems 6.1, 6.2 | Theorem 1, details in a separate report (KMM23) | DMV18 Theorem 1 with a CCHLRR18 adapter |
-| transcript loss | `25t²/2^576` | `25t²/|Σ|^c` | `c log₂|F|` bits claimed | `C(Q, 2)/2^256` |
+| | `main` | CO25 DSFS | spongefish | SAFE | #552 (`riscv-exploration`) |
+| --- | --- | --- | --- | --- | --- |
+| primitive | Keccak-f, rate 16, capacity 9 lanes | ideal permutation | any permutation | permutation over a field | BLAKE2s compression, not a permutation |
+| absorb | overwrite, rate past the block zeroed | overwrite | overwrite | add | framed compression nodes |
+| framing | a tag lane per scalar; none between absorb and squeeze | none | through the session id | IO-pattern tag `T = H(pattern ‖ D)` in the capacity | role, length and consumed-output counter per node |
+| what fixes the schedule | bytecode in the IV and sizes absorbed first | the codec, by `(λ, n)` | the session id, which "MUST account for the absorb/squeeze pattern" | the declared IO pattern | statement and announcement, as on `main`; the counter records each node's operation |
+| squeeze | one challenge per permutation | the whole rate | the whole rate | the whole rate | 32-byte output blocks, unused bytes kept |
+| argument | none written (§4: per shape, with two gaps) | Theorems 6.1, 6.2; BCS: Corollary 1, informal | CO25 | Theorem 1, proof in a separate report | DMV18 Theorem 1 with a CCHLRR18 adapter |
 
-spongefish's own duplex (cited there as "[CO25], Construction 3.3, with minor changes") has the same absorb/squeeze ambiguity as `main` and documents it: "The session identifier MUST account for the absorb/squeeze pattern." `main` meets that obligation with the bytecode in the IV and the sizes absorbed at the start.
+spongefish's duplex (cited there as "[CO25], Construction 3.3, with minor changes") has the same absorb/squeeze ambiguity as `main`. `main` meets its session-id obligation in substance, not literally: the pattern is fixed by the IV together with the sizes absorbed first, which are not in the IV.
 
 ## 6. Cost in the recursion guest
 
-Measured on `main` at `23a305b`, `cargo leanvm recursion --n 2 --xmss-per-leaf 900 --log-inv-rate 2`, with a counter in `crates/verifier`'s sponge (not committed), on a 4-core cloud VM:
+Measured on `main` at `23a305b`, `cargo leanvm recursion --n 2 --xmss-per-leaf 900 --log-inv-rate 2`, with a counter in `crates/verifier`'s sponge (not committed), on a 4-core cloud VM. A trace of the Python verifier reproduces the per-child and root counts exactly.
 
 | | per child proof verified |
 | --- | --- |
@@ -125,29 +137,35 @@ Measured on `main` at `23a305b`, `cargo leanvm recursion --n 2 --xmss-per-leaf 9
 | challenges | 699 (569 after absorbed scalars, 130 after another challenge) |
 | permutations after the seed | 921 (222 forced by a fifth scalar, 699 for challenges) |
 | longest run of consecutive challenges | 21 |
-| Merkle query paths | 222, with 4,878 sibling compressions plus leaf hashes |
+| Merkle (native verifier counts) | 222 query paths, 4,878 sibling compressions plus leaf hashes |
 | permutations with up to 5 challenges each | 808 (12% fewer) |
 | permutations with up to 4 challenges each | 814 |
 
-The root runs 537,703 cycles, with `KECCAK` at 2^13.63 (about 12,700 instructions, 2.4% of cycles) and the Keccak table padded to 2^14. Fiat-Shamir is about 1,844 of those `KECCAK`s (15%), and the rest is mostly Merkle hashing. Five challenges per permutation would remove about 226 `KECCAK`s at the root (about 2%), without moving the table off 2^14. Cycles spent around each permutation (packing scalars, reading challenges) were not attributed.
+The root runs 537,703 cycles, with `KECCAK` at 2^13.63 (about 12,680 instructions, 2.4% of cycles) and the Keccak table padded to 2^14. Fiat-Shamir for the two children is about 1,844 of those (15%), not counting the root's own batching transcript; the rest was not attributed. Five challenges per permutation would remove about 226 at the root (about 2%) and leave the table at 2^14. The cycles spent around each permutation were not attributed.
 
-If challenges are ever packed, five per permutation is the cheaper layout in the guest as well as natively. [`challenge_from_state`](P/crates/rec_aggregation/guests/lean_ethereum.py#L515-L524) already splits the cell holding lanes 2 and 3, hinting one limb and deriving the other, and discards lane 3. With challenges at lanes `3j..3j+3`, consecutive pairs share that split, one hint per two challenges, where four-lane-aligned challenges need one per challenge.
+If challenges are ever packed, five per permutation is also the cheaper layout in the guest. [`challenge_from_state`](P/crates/rec_aggregation/guests/lean_ethereum.py#L515-L524) splits the cell holding lanes 2 and 3, hinting one limb and deriving the other, and discards lane 3. With five challenges at lanes `3j..3j+3`, pairs share the split cells: three hints for five challenges, against one per challenge when challenges are aligned to four lanes.
 
 ## 7. The options, re-scored
 
-- **A. Prove the current mode.** §4 as a lemma in §8 (`sec:e2e-fiat-shamir`), citing CO25 Theorem 6.1, plus a test pinning invariant 1 of §4.5. No change to the prover, the verifiers or the guest, and none to `TAG` or the labels. Recommended.
-- **B. Add framing.** Not needed on `main`: CO25 shows framing is unnecessary when the instance fixes the round structure, and here it does. #552 needs framing because its theorem (DMV18) is about hashing modes of a compression function. Framing would add guest work to every permutation without improving the bound.
-- **C. Squeeze up to five challenges per permutation.** About 2% of the root's `KECCAK`s, no change to the padded table at this size, and it touches all four implementations. Worth doing only bundled with another transcript change.
+- **A. Write the argument down.** The per-shape mapping (§4.1 to §4.3), the extension for a prover-chosen shape (§4.4), the Merkle assumption (§4.5) and the scope (§4.7), in §8, with the test pinning the read schedule. No change to the prover, the verifiers or the guest. The extension is the one piece of real proof work, and the most useful thing to have checked by someone who knows CO25's §5.
+- **B. Add framing.** For a fixed shape CO25 needs none. Framing does not remove gap 1 either: #552's argument reconstructs the schedule from the parsed announcement too. What framing would buy is gap 2, by separating transcript hashing from Merkle hashing, which a domain-separation constant in the transcript's or the trees' inputs would also do.
+- **C. Squeeze up to five challenges per permutation.** About 2% of the root's `KECCAK`s, no change to the padded table at this size, and it touches all four implementations. Only worth it bundled with another transcript change.
 
 ## 8. Open questions for the maintainers
 
-1. Is `main` now the target of #529, or is `riscv-exploration`'s transcript (#552, `spongefish-fs`) the one that matters?
-2. Which construction did the original concern refer to: `main`'s old BLAKE2s chain, the `riscv-exploration` duplex, or Plonky3-style duplex challengers in general? `main` is now the last kind.
-3. Would a PR adding §4 to the spec, and a test pinning the schedule invariant, be welcome?
+1. Is `main` now the target of #529, or is `riscv-exploration`'s transcript the one that matters?
+2. Was the concern about #523's step (merged the day before #529), `main`'s BLAKE2s chain, or duplex challengers in general? `main` is now the last kind.
+3. Would a PR writing §7's option A into §8 be useful as is, or would you rather see the extension of §4.4 worked out first?
+
+## 9. Review
+
+The first version of these notes said `main`'s transcript "is exactly CO25's DSFS", "provably" harmless, with "no code change" needed. An adversarial review (nine independent reviewers, one lens each, against the paper, the code and git) found that this overclaimed: gaps 1 and 2 above, the history of §1 (`main`'s chain lasted until Oct 23; #607 merged; #523 preceded the issue), the start's permutation count, the codec's round 1 and nonce, the scope and the grinding caveat. Every correction was checked against its source before being applied.
 
 ## References
 
-- CO25: A. Chiesa, M. Orrù. *A Fiat-Shamir Transformation From Duplex Sponges.* TCC 2025, ePrint 2025/536 (revision of 2026-03-27). Construction 3.3, Definitions 3.12 and 4.1, Construction 4.3, Theorems 6.1 and 6.2, §2.2.
-- SAFE: J.-P. Aumasson, D. Khovratovich, B. Mennink, P. Quine. *SAFE: Sponge API for Field Elements.* ePrint 2023/522. §1 (misuse patterns), §3.2 Theorem 1, §3.3.
+- CO25: A. Chiesa, M. Orrù. *A Fiat-Shamir Transformation From Duplex Sponges.* TCC 2025; ePrint 2025/536, revised 2026-03-27. §1, §1.3, §2.2, §2.6 (Corollary 1), §3, Construction 3.3, Definitions 3.12 and 4.1, Construction 4.3, Theorems 6.1 and 6.2.
+- SAFE: J.-P. Aumasson, D. Khovratovich, B. Mennink, P. Quine. *SAFE: Sponge API for Field Elements.* ePrint 2023/522. §1 (misuse patterns), §3.2, §3.3.
+- KRS25: D. Khovratovich, R. Rothblum, L. Soukhanov. *How to Prove False Statements: Practical Attacks on Fiat-Shamir.* ePrint 2025/118.
+- CY24: A. Chiesa, E. Yogev. *Building Cryptographic Proofs from Hash Functions.* 2024.
 - spongefish: `arkworks-rs/spongefish` at `2880323`, `spongefish/src/duplex_sponge.rs`.
-- #552 and `spongefish-fs`: `upstream/riscv-exploration` (`f11f84f5`), `upstream/spongefish-fs` (`8ba3da3c`), and `doc/leanvm/body/08-end-to-end-protocol.tex` there.
+- `riscv-exploration`: #523 `c0a6aab3`, #552 `f11f84f5`, #607 `d3c7f9d9`, #620 `f14c2300`; `doc/leanvm/body/08-end-to-end-protocol.tex` there.
