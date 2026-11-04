@@ -33,8 +33,8 @@ Commits: `3aa2f33` (first version), `e0a58c1`, `7ec4b6e`, `78b2209` (spec correc
 | --- | --- |
 | `cargo fmt --all -- --check` | clean |
 | `cargo clippyall` (workspace, all targets, `-D warnings`) | clean |
-| `cargo testall` (release, whole workspace) | running when this was written; see the next commit |
-| `cargo docall` | pending, after `testall` |
+| `cargo testall` (release, whole workspace) | 328 passed, 0 failed, 6 ignored (the repository's own `#[ignore]`d slow tests), in 4m38s; includes `only_the_sizes_shape_the_transcript` and the end-to-end `aggregate_two_to_one` |
+| `cargo docall` | clean |
 | `cargo test --release -p leanvm_core --test verifiers` | 6 passed, 1 ignored (manual table regeneration), including the Python verifier and tamper tests |
 | mutation test of the new test | with `crates/verifier` reading one extra scalar in a replay when a bit of the root is 0 (false for the fixture's honest proof), the new test failed and no other test did; reverted |
 | `latexmk -pdf main.tex` | builds, 56 pages, no undefined references, the one pre-existing overfull box and no new one; rendered pages read back |
