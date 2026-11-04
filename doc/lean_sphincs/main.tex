@@ -22,7 +22,6 @@
 \newcommand{\PRF}{\mathsf{PRF}}
 \newcommand{\PRFmsg}{\mathsf{PRF}_{\mathrm{msg}}}
 \newcommand{\Hmsg}{\mathsf{H}_{\mathrm{msg}}}
-\newcommand{\MGF}{\mathsf{MGF1}}
 \newcommand{\Enc}{\mathsf{Enc}}
 \newcommand{\Gen}{\mathsf{Gen}}
 \newcommand{\Sig}{\mathsf{Sig}}
@@ -66,12 +65,12 @@ This specification defines leanSPHINCS, a stateless hash-based signature scheme:
   \item \textbf{NIST security level~1}~\cite{NISTPQC}, a target of 127 bits of classical security in the Random Oracle model and $\approx 64$ bits in the Quantum Random Oracle model (Section~\ref{sec:security}).
   \item \textbf{Public key: 32 bytes.}
   \item \textbf{Signature: 7740 bytes.}
-  \item \textbf{Verification: 516 permutations} of Keccak-f.
+  \item \textbf{Verification: 515 permutations} of Keccak-f.
   \item \textbf{Lifetime: $2^{30}$ signatures per key pair.}
 \end{itemize}
 \end{abstract}
 
-A message digest picks a FORS instance and one leaf in each of its trees. The FORS signature signs the message, and a hypertree of WOTS$^+$C keys signs the FORS public key up to the public key. The algorithms are those of FIPS~205 but for three changes: the one-time signature (Section~\ref{sec:ots}), the layers' heights (Section~\ref{sec:layer}), and the hash, Keccak-256 where FIPS~205 has SHAKE256 (Section~\ref{sec:parameters}), with the message hash built as FIPS~205's SHA2 instances build theirs. A 256-bit message is signed by FIPS~205's internal functions, without the context prefix of its external ones, and the only secret is a 256-bit $\skseed$, from which $\skprf$ and $\pkseed$ derive (Section~\ref{sec:parameters}). The definitions below specify the scheme completely.
+A message digest picks a FORS instance and one leaf in each of its trees. The FORS signature signs the message, and a hypertree of WOTS$^+$C keys signs the FORS public key up to the public key. The algorithms are those of FIPS~205 but for three changes: the one-time signature (Section~\ref{sec:ots}), the layers' heights (Section~\ref{sec:layer}), and the hash, Keccak-256 where FIPS~205 has SHAKE256 (Section~\ref{sec:parameters}), with the message hash in counter mode. A 256-bit message is signed by FIPS~205's internal functions, without the context prefix of its external ones, and the only secret is a 256-bit $\skseed$, from which $\skprf$ and $\pkseed$ derive (Section~\ref{sec:parameters}). The definitions below specify the scheme completely.
 
 \section{Hashing and parameters}
 \label{sec:parameters}
@@ -86,12 +85,9 @@ Let $\hash:\bits{*}\to\bits{256}$ be Keccak-256~\cite{keccak}, Ethereum's hash, 
   \PRFmsg(\skprf,\mathit{opt\_rand},M)&=\Truncate_n\!\left(\hash(\skprf\concat\mathit{opt\_rand}\concat M)\right),
 \end{aligned}
 \]
-$\Th$ being FIPS~205's $\mathsf F$, $\mathsf H$ and $\mathsf T_\ell$ alike. Keccak-256 has a fixed output length, so the message hash, which needs more of it than one call gives, is built as FIPS~205 builds it from SHA-256, by MGF1~\cite{RFC8017}:
+$\Th$ being FIPS~205's $\mathsf F$, $\mathsf H$ and $\mathsf T_\ell$ alike. Keccak-256 has a fixed output length, so the message hash, which needs more of it than one call gives, is two calls on $Z=R\concat\pkseed\concat\pkroot\concat M$ and a counter, 84 bytes each, one block:
 \[
-\begin{aligned}
-  \MGF(Z,\ell)&=\Truncate_\ell\!\left(\hash(Z\concat\BE_{32}(0))\concat\hash(Z\concat\BE_{32}(1))\concat\cdots\right),\\
-  \Hmsg(R,\pkseed,\pkroot,M)&=\MGF\!\left(R\concat\pkseed\concat\hash(R\concat\pkseed\concat\pkroot\concat M),\,m\right).
-\end{aligned}
+  \Hmsg(R,\pkseed,\pkroot,M)=\Truncate_m\!\left(\hash(Z\concat\BE_{32}(0))\concat\hash(Z\concat\BE_{32}(1))\right).
 \]
 
 The message $M$ is 256 bits. $\pkseed$, $\skprf$, chain values and Merkle nodes are $n$ bytes. The chunk size $w$ is FIPS~205's $\mathit{lg}_w$. The signature contains an $n$-byte randomizer $R$ and one 32-bit counter per layer.
@@ -284,15 +280,15 @@ A signature is in FIPS~205's order, each layer's counter before its chain values
 
 Count permutations of Keccak-f: an input of $r$ bytes costs $\lfloor r/136\rfloor+1$. Every signature takes exactly
 \[
-  \underbrace{1+2}_{\Hmsg}
+  \underbrace{2}_{\Hmsg}
   +\underbrace{k\,(1+a)}_{\text{FORS trees}}
   +\underbrace{4}_{\mathsf T_k}
   +\underbrace{3}_{\text{encodings}}
   +\underbrace{d\bigl((2^w-1)v-T+8\bigr)}_{\text{WOTS$^+$C}}
   +\underbrace{h}_{\text{paths}}
-  =516
+  =515
 \]
-permutations to verify: the inner hash of $\Hmsg$ and its two MGF1 calls; per FORS tree a leaf and 10 nodes; 4 for $\mathsf T_k$'s 432-byte input; one per encoding; per layer 64 chain steps and 8 for $\mathsf T_v$'s 1072-byte input.
+permutations to verify: the two calls of $\Hmsg$; per FORS tree a leaf and 10 nodes; 4 for $\mathsf T_k$'s 432-byte input; one per encoding; per layer 64 chain steps and 8 for $\mathsf T_v$'s 1072-byte input.
 
 A one-time key takes $64$ derivations and $192$ chain steps, so its leaf $264$ permutations, and key generation, with the hash that derives $\pkseed$, $264\cdot2^{10}+(2^{10}-1)+1=271\,360$. Signing spends about $5.3\cdot10^5$: $271\,359$ for the top tree, which gives $\pkroot$ and the top path and which a signer may keep whole from key generation instead, $73\,708$ for the FORS instance, $135\,678$ for the two lower trees, and per layer about $14\,670$ encoding attempts, one permutation each.
 
@@ -304,7 +300,7 @@ Model $\hash$ as one shared random oracle. The challenger generates a key pair a
 The Lean~4 proof in \texttt{formal/lean\_sphincs/} (\texttt{FORS.h26\_layered}) establishes this bound, for $N=1\,182\,000\,000\approx2^{30.14}$, for the same shape with the scheme's earlier hash inputs: 16-byte little-endian addresses, two secrets derived per hash, a digest of two calls over $P\concat\addr\concat M\concat R$ read least significant bit first, and FORS trees without their root hash, whose key is their $2k$ top nodes. It does not cover the scheme of this document, whose FORS key, message hash, randomizer and key derivation differ in structure as well as in bytes.
 
 \paragraph{Hash domains.}
-Every hash call of the hypertree and of FORS hashes $\pkseed$ then an address naming it, its type among those of FIPS~205 or the encoding's own, so distinct such calls of one key never share an input, and calls of different keys differ in $\pkseed$. The calls without an address are FIPS~205's own ($\PRFmsg$, $\Hmsg$'s inner hash and its MGF1 calls) and the derivation of $\pkseed$ and $\skprf$, whose 43-byte input no other call has the length of.
+Every hash call of the hypertree and of FORS hashes $\pkseed$ then an address naming it, its type among those of FIPS~205 or the encoding's own, so distinct such calls of one key never share an input, and calls of different keys differ in $\pkseed$. The calls without an address are $\PRFmsg$, the two calls of $\Hmsg$, and the derivation of $\pkseed$ and $\skprf$, whose 43-byte input no other call has the length of.
 
 \paragraph{Quantum security.}
 \label{sec:quantum}

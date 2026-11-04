@@ -108,28 +108,17 @@ pub fn prf_msg(sk_prf: &Digest, opt_rand: &[u8; N], m: &Message) -> Digest {
     truncate(Hasher::new().update(sk_prf).update(opt_rand).update(m).finalize())
 }
 
-/// `MGF1` (RFC 8017) over the leanVM hash: the first `L` bytes of
-/// `H(seed | BE_32(0)) | H(seed | BE_32(1)) | ...`.
-pub fn mgf1<const L: usize>(seed: &[u8]) -> [u8; L] {
-    let mut out = [0; L];
-    for (c, chunk) in out.chunks_mut(32).enumerate() {
-        let block = Hasher::new().update(seed).update(&(c as u32).to_be_bytes()).finalize();
-        chunk.copy_from_slice(&block[..chunk.len()]);
+/// `H_msg(R, PK.seed, PK.root, M)` in counter mode: the calls
+/// `H(R | PK.seed | PK.root | M | BE_32(i))`, one block each, whole, of which the
+/// first [`DIGEST_BYTES`] are `H_msg`.
+pub fn h_msg(r: &Digest, pk_seed: &PkSeed, pk_root: &Digest, m: &Message) -> [u8; 32 * DIGEST_CALLS] {
+    let mut prefix = Hasher::new();
+    prefix.update(r).update(pk_seed).update(pk_root).update(m);
+    let mut out = [0; 32 * DIGEST_CALLS];
+    for (i, call) in out.as_chunks_mut::<32>().0.iter_mut().enumerate() {
+        *call = prefix.clone().update(&(i as u32).to_be_bytes()).finalize();
     }
     out
-}
-
-/// `H_msg(R, PK.seed, PK.root, M) = MGF1(R | PK.seed | H(R | PK.seed | PK.root | M), m)`,
-/// as FIPS 205 §11.2 builds it from a hash of fixed output length: its MGF1 calls
-/// whole, of which the first [`DIGEST_BYTES`] are `H_msg`.
-pub fn h_msg(r: &Digest, pk_seed: &PkSeed, pk_root: &Digest, m: &Message) -> [u8; 32 * DIGEST_CALLS] {
-    let inner = Hasher::new()
-        .update(r)
-        .update(pk_seed)
-        .update(pk_root)
-        .update(m)
-        .finalize();
-    mgf1(&[r.as_slice(), pk_seed, &inner].concat())
 }
 
 /// FIPS 205's three key seeds, which `slh_keygen_internal` takes. Here `SK.seed` is

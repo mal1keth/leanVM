@@ -4,15 +4,15 @@
 //! picks a FORS instance, and one leaf in each of its 24 trees. The FORS
 //! signature signs the message, and a hypertree of three layers of WOTS+C keys,
 //! of heights 8, 8 and 10 from the bottom, signs the FORS public key up to the
-//! public key. A public key is 32 bytes, a signature 7740, and a verification 516
+//! public key. A public key is 32 bytes, a signature 7740, and a verification 515
 //! permutations.
 //!
 //! Every hash input is laid out as in FIPS 205's SHAKE instances, Keccak-256
 //! standing in for SHAKE256 and its output truncated to `n = 16` bytes: `F`, `H`,
 //! `T_l` and `PRF` hash `PK.seed | ADRS | M` with the 32-byte address of FIPS 205
 //! §4.2, and `PRF_msg` hashes `SK.prf | opt_rand | M`. `H_msg`, which needs more
-//! bytes than one call gives, is FIPS 205's SHA2 construction: MGF1 over the hash
-//! of `R | PK.seed | PK.root | M` (the `hash` module).
+//! bytes than one call gives, is two calls on `R | PK.seed | PK.root | M` and a
+//! counter (the `hash` module).
 //!
 //! The secret key is `SK.seed`, 32 bytes and the only secret: its hash under the
 //! scheme's tag gives `PK.seed` and `SK.prf`. Key generation builds the
@@ -80,7 +80,7 @@ pub const TREE_INDEX_BYTES: usize = (H - LAYER_HEIGHTS[0]).div_ceil(8);
 pub const LEAF_INDEX_BYTES: usize = LAYER_HEIGHTS[0].div_ceil(8);
 /// `m`: the bytes `H_msg` outputs.
 pub const DIGEST_BYTES: usize = MD_BYTES + TREE_INDEX_BYTES + LEAF_INDEX_BYTES;
-/// The MGF1 calls that give them.
+/// The `H_msg` calls that give them.
 pub const DIGEST_CALLS: usize = DIGEST_BYTES.div_ceil(32);
 
 /// `PK.seed | PK.root`.
@@ -106,11 +106,9 @@ pub const fn permutations(len: usize) -> usize {
     len / primitives::hash::RATE + 1
 }
 
-/// Permutations of one verification: `H_msg` (the inner hash and the MGF1
-/// calls), the FORS leaves and nodes, the FORS key, the encodings, the chains,
-/// the one-time keys and the paths.
-pub const VERIFY_PERMUTATIONS: usize = permutations(3 * N + MESSAGE_LEN)
-    + DIGEST_CALLS * permutations(2 * N + 32 + 4)
+/// Permutations of one verification: `H_msg`, the FORS leaves and nodes, the
+/// FORS key, the encodings, the chains, the one-time keys and the paths.
+pub const VERIFY_PERMUTATIONS: usize = DIGEST_CALLS * permutations(3 * N + MESSAGE_LEN + 4)
     + FORS_TREES * (permutations(PREFIX_LEN + N) + FORS_HEIGHT * permutations(PREFIX_LEN + 2 * N))
     + permutations(PREFIX_LEN + FORS_TREES * N)
     + LAYERS * permutations(PREFIX_LEN + N + COUNTER_LEN)
@@ -122,4 +120,4 @@ const _: () = assert!(TARGET_SUM < V * (CHAIN_LEN - 1));
 const _: () = assert!(H == 26 && DIGEST_BYTES == 34 && DIGEST_CALLS == 2);
 const _: () = assert!(PUB_KEY_SIZE == 32);
 const _: () = assert!(SIG_SIZE == 7740);
-const _: () = assert!(VERIFY_PERMUTATIONS == 516);
+const _: () = assert!(VERIFY_PERMUTATIONS == 515);

@@ -398,15 +398,15 @@ SP_HEIGHT_2 = SP_HEIGHT_2_PLACEHOLDER
 SP_H = SP_HEIGHT_0 + SP_HEIGHT_1 + SP_HEIGHT_2
 SP_FORS_TREES = SP_FORS_TREES_PLACEHOLDER
 SP_FORS_HEIGHT = SP_FORS_HEIGHT_PLACEHOLDER
-# The message digest is MGF1's first two calls: the first call's two cells, then the
-# low two bytes of the second call's first cell. Its first SP_MD_BYTES bytes are the
+# The message digest is H_msg's two calls: the first call's two cells, then the low
+# two bytes of the second call's first cell. Its first SP_MD_BYTES bytes are the
 # FORS leaves, SP_FORS_HEIGHT bits each, most significant first; then the tree index,
 # three bytes big endian of which the low SP_H - SP_HEIGHT_0 bits count, the high byte
 # holding the 2 bits the others leave; then the bottom leaf, one byte.
 SP_CELL_BITS = 2 * BASE_FIELD_BITS
 SP_MD_BYTES = SP_FORS_TREES * SP_FORS_HEIGHT // 8
-# MGF1's second call ends with its counter, BE_32(1), as its cell holds it.
-SP_MGF1_ONE = 2 ** 24
+# H_msg's second call ends with its counter, BE_32(1), as its cell holds it.
+SP_DIGEST_ONE = 2 ** 24
 # FIPS 205's address is two cells, A0 the layer and the tree words and A1 the type
 # and the three words after it, each word big endian, so a value's low byte is its
 # word's last. The cell bit each such byte starts at:
@@ -3729,15 +3729,12 @@ def verify_sig_lean_sphincs(signer, byte_bits):
     pk_root = signer[GEN]
 
     # ---- H_msg, which picks the index and every FORS leaf ----
-    # MGF1 over R | PK.seed | H(R | PK.seed | PK.root | M): the inner hash, 80 bytes,
-    # then two calls of 68 bytes, each ending with its counter.
+    # H(R | PK.seed | PK.root | M | BE_32(i)) for i = 0, 1, 84 bytes each.
     rho = hint_witness("sp_rand")
-    inner = StackBuf(KECCAK_STATE)
-    keccak([rho, pp], [pk_root, signer[GEN ** 2]], inner, tail=[signer[GEN ** 3], 0, 0, 0], len=80)
     d0 = StackBuf(KECCAK_STATE)
     d1 = StackBuf(KECCAK_STATE)
-    keccak([rho, pp], [inner[0], inner[1]], d0, tail=[0, 0, 0, 0], len=68)
-    keccak([rho, pp], [inner[0], inner[1]], d1, tail=[SP_MGF1_ONE, 0, 0, 0], len=68)
+    keccak([rho, pp], [pk_root, signer[GEN ** 2]], d0, tail=[signer[GEN ** 3], 0, 0, 0], len=84)
+    keccak([rho, pp], [pk_root, signer[GEN ** 2]], d1, tail=[signer[GEN ** 3], SP_DIGEST_ONE, 0, 0], len=84)
 
     # The digest's bits are advice pinned Boolean, and the digest is rebuilt from them:
     # byte by byte from the FORS leaves' values, which their shifts give, then the tree
