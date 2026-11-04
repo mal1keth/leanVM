@@ -1,0 +1,101 @@
+diff --git a/crates/verifier/src/lib.rs b/crates/verifier/src/lib.rs
+index 6373c358..cc72a1d2 100644
+--- a/crates/verifier/src/lib.rs
++++ b/crates/verifier/src/lib.rs
+@@ -333,12 +333,23 @@ fn walk(bytecode: &Bytecode, public_input: &[u8; 32], proof: &Proof, checked: bo
+         log_inverse_rate as usize,
+         &stack_claims,
+     )?;
++    let merkle_paths = transcript.finish()?;
++    {
++        // MEASUREMENT ONLY, never committed.
++        let siblings: usize = merkle_paths.iter().map(|p| p.siblings.len()).sum();
++        let leaf_perms: usize = merkle_paths.iter().map(|p| (8 * p.leaf.len()).div_ceil(128).max(1)).sum();
++        eprintln!(
++            "FSCOUNT merkle: paths={} sibling_compressions={siblings} leaf_perms~{leaf_perms} stack_log={} log_inv_rate={log_inverse_rate} rows={:?}",
++            merkle_paths.len(), layout.stack_log, table_rows
++        );
++        crate::transcript::count::report(if checked { "verify" } else { "replay" });
++    }
+     Ok(Summary {
+         log_memory: layout.log_memory,
+         table_rows,
+         log_inv_rate: log_inverse_rate as usize,
+         bytecode_point: bus.bytecode_point,
+         keccak_scalars,
+-        merkle_paths: transcript.finish()?,
++        merkle_paths,
+     })
+ }
+diff --git a/crates/verifier/src/transcript.rs b/crates/verifier/src/transcript.rs
+index 9f53b14a..5151e4ff 100644
+--- a/crates/verifier/src/transcript.rs
++++ b/crates/verifier/src/transcript.rs
+@@ -37,11 +37,33 @@ const RATE_SCALARS: usize = 4;
+ /// A duplex sponge over Keccak-f\[1600\], in overwrite mode. The rate is lanes 0..16 and the capacity lanes
+ /// 16..25. A permutation writes waiting scalar `i` over lanes `4i..4i+4`, zeroes the rest of the rate and keeps the
+ /// capacity. A fifth scalar, or a challenge, permutes what waits, and every challenge takes a permutation of its own.
++// MEASUREMENT ONLY, never committed.
++pub mod count {
++    use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
++    pub static ABSORB_FULL: AtomicUsize = AtomicUsize::new(0);
++    pub static SAMPLE_PENDING: AtomicUsize = AtomicUsize::new(0);
++    pub static SAMPLE_EMPTY: AtomicUsize = AtomicUsize::new(0);
++    pub static C4: AtomicUsize = AtomicUsize::new(0);
++    pub static C5: AtomicUsize = AtomicUsize::new(0);
++    pub static SCALARS: AtomicUsize = AtomicUsize::new(0);
++    pub static SAMPLES: AtomicUsize = AtomicUsize::new(0);
++    pub static MAXRUN: AtomicUsize = AtomicUsize::new(0);
++    pub fn report(what: &str) {
++        let [full, pending, empty, c4, c5, scalars, samples, maxrun] =
++            [&ABSORB_FULL, &SAMPLE_PENDING, &SAMPLE_EMPTY, &C4, &C5, &SCALARS, &SAMPLES, &MAXRUN].map(|c| c.swap(0, Relaxed));
++        eprintln!(
++            "FSCOUNT {what}: scalars={scalars} samples={samples} perms={} (absorb_full={full} sample_pending={pending} sample_empty={empty}) C4_perms={} C5_perms={} longest_run={maxrun}",
++            full + pending + empty, full + c4, full + c5
++        );
++    }
++}
++
+ #[derive(Clone, Debug)]
+ pub struct Sponge {
+     state: [u64; STATE_LANES],
+     pending: [(E, u64); RATE_SCALARS],
+     n_pending: usize,
++    run: usize,
+ }
+ 
+ impl Sponge {
+@@ -57,6 +79,7 @@ impl Sponge {
+             },
+             pending: [(ZERO, 0); RATE_SCALARS],
+             n_pending: 0,
++            run: 0,
+         }
+     }
+ 
+@@ -72,7 +95,11 @@ impl Sponge {
+     }
+ 
+     fn absorb(&mut self, value: E, tag: u64) {
++        use core::sync::atomic::Ordering::Relaxed;
++        self.run = 0;
++        count::SCALARS.fetch_add(1, Relaxed);
+         if self.n_pending == RATE_SCALARS {
++            count::ABSORB_FULL.fetch_add(1, Relaxed);
+             self.duplex();
+         }
+         self.pending[self.n_pending] = (value, tag);
+@@ -84,6 +111,13 @@ impl Sponge {
+     }
+ 
+     pub fn sample(&mut self) -> E {
++        use core::sync::atomic::Ordering::Relaxed;
++        count::SAMPLES.fetch_add(1, Relaxed);
++        if self.n_pending > 0 { count::SAMPLE_PENDING.fetch_add(1, Relaxed); } else { count::SAMPLE_EMPTY.fetch_add(1, Relaxed); }
++        if self.run % 4 == 0 { count::C4.fetch_add(1, Relaxed); }
++        if self.run % 5 == 0 { count::C5.fetch_add(1, Relaxed); }
++        self.run += 1;
++        count::MAXRUN.fetch_max(self.run, Relaxed);
+         self.duplex();
+         E::new(self.state[0], self.state[1], self.state[2])
+     }
