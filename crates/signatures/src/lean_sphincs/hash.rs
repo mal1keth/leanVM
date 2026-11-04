@@ -103,17 +103,38 @@ pub fn prf(pk_seed: &PkSeed, sk_seed: &Seed, adrs: &Adrs) -> Digest {
     th(pk_seed, adrs, sk_seed)
 }
 
-/// `PRF_msg(SK.prf, opt_rand, M) = Trunc_n(H(SK.prf | opt_rand | M))`.
-pub fn prf_msg(sk_prf: &Digest, opt_rand: &[u8; N], m: &Message) -> Digest {
-    truncate(Hasher::new().update(sk_prf).update(opt_rand).update(m).finalize())
+/// The context string pure SLH-DSA signs a message under.
+pub const CONTEXT: &[u8; 11] = b"leanSPHINCS";
+/// The length of `M'`.
+pub const FRAMED_LEN: usize = 2 + CONTEXT.len() + MESSAGE_LEN;
+
+/// `M' = 0x00 | len(ctx) | ctx | M`, what `slh_sign` and `slh_verify` (FIPS 205
+/// Algorithms 22 and 24) hand the internal functions.
+pub fn framed(m: &Message) -> [u8; FRAMED_LEN] {
+    let mut out = [0; FRAMED_LEN];
+    out[1] = CONTEXT.len() as u8;
+    out[2..2 + CONTEXT.len()].copy_from_slice(CONTEXT);
+    out[2 + CONTEXT.len()..].copy_from_slice(m);
+    out
 }
 
-/// `H_msg(R, PK.seed, PK.root, M)` in counter mode: the calls
-/// `H(R | PK.seed | PK.root | M | BE_32(i))`, one block each, whole, of which the
+/// `PRF_msg(SK.prf, opt_rand, M') = Trunc_n(H(SK.prf | opt_rand | M'))`.
+pub fn prf_msg(sk_prf: &Digest, opt_rand: &[u8; N], m: &Message) -> Digest {
+    truncate(
+        Hasher::new()
+            .update(sk_prf)
+            .update(opt_rand)
+            .update(&framed(m))
+            .finalize(),
+    )
+}
+
+/// `H_msg(R, PK.seed, PK.root, M')` in counter mode: the calls
+/// `H(R | PK.seed | PK.root | M' | BE_32(i))`, one block each, whole, of which the
 /// first [`DIGEST_BYTES`] are `H_msg`.
 pub fn h_msg(r: &Digest, pk_seed: &PkSeed, pk_root: &Digest, m: &Message) -> [u8; 32 * DIGEST_CALLS] {
     let mut prefix = Hasher::new();
-    prefix.update(r).update(pk_seed).update(pk_root).update(m);
+    prefix.update(r).update(pk_seed).update(pk_root).update(&framed(m));
     let mut out = [0; 32 * DIGEST_CALLS];
     for (i, call) in out.as_chunks_mut::<32>().0.iter_mut().enumerate() {
         *call = prefix.clone().update(&(i as u32).to_be_bytes()).finalize();
@@ -121,8 +142,7 @@ pub fn h_msg(r: &Digest, pk_seed: &PkSeed, pk_root: &Digest, m: &Message) -> [u8
     out
 }
 
-/// FIPS 205's three key seeds, which `slh_keygen_internal` takes. Here `SK.seed` is
-/// 32 bytes, the whole secret key, and the other two derive from it.
+/// FIPS 205's three key seeds, which `slh_keygen_internal` takes.
 #[derive(Clone, Copy)]
 pub struct KeySeeds {
     pub sk_seed: Seed,
@@ -130,7 +150,8 @@ pub struct KeySeeds {
     pub pk_seed: PkSeed,
 }
 
-/// The key seeds of `SK.seed`: `PK.seed | SK.prf = H(tag | SK.seed)`.
+/// The key seeds of `SK.seed`, 32 bytes and the whole secret key:
+/// `PK.seed | SK.prf = H(tag | SK.seed)`.
 pub fn key_seeds(sk_seed: &Seed) -> KeySeeds {
     let out = Hasher::new().update(SEED_TAG).update(sk_seed).finalize();
     KeySeeds {

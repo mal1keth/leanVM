@@ -58,7 +58,7 @@ impl std::fmt::Debug for LeanSphincsSecretKey {
 impl LeanSphincsSecretKey {
     /// The public key, rebuilt as key generation builds it: the whole top tree.
     pub fn public_key(&self) -> LeanSphincsPublicKey {
-        public_key_of(&key_seeds(&self.seed))
+        keygen(&key_seeds(&self.seed)).0
     }
 
     /// SECRET KEY MATERIAL: the seed, all of the key.
@@ -223,7 +223,7 @@ pub fn digest_fields(digest: &[u8; 32 * DIGEST_CALLS]) -> (u64, [usize; FORS_TRE
 }
 
 /// The message digest read as the index and the FORS leaves.
-pub fn message_digest(pk: &LeanSphincsPublicKey, r: &Digest, m: &Message) -> (u64, [usize; FORS_TREES]) {
+fn message_digest(pk: &LeanSphincsPublicKey, r: &Digest, m: &Message) -> (u64, [usize; FORS_TREES]) {
     digest_fields(&h_msg(r, &pk.pk_seed, &pk.root, m))
 }
 
@@ -275,16 +275,18 @@ fn tree_levels(seeds: &KeySeeds, key: &OtsKey) -> Vec<Vec<Digest>> {
 
 /// `Gen`, deterministic: the seed's [`key_seeds`], and the top tree gives the root.
 pub fn key_gen_from_seed(seed: Seed) -> (LeanSphincsSecretKey, LeanSphincsPublicKey) {
-    (LeanSphincsSecretKey { seed }, public_key_of(&key_seeds(&seed)))
+    (LeanSphincsSecretKey { seed }, keygen(&key_seeds(&seed)).0)
 }
 
-/// `slh_keygen_internal`: `PK.seed` and the top tree's root.
-fn public_key_of(seeds: &KeySeeds) -> LeanSphincsPublicKey {
+/// `slh_keygen_internal`: the public key, `PK.seed` and the top tree's root, with
+/// the top tree's levels, which signing reuses.
+fn keygen(seeds: &KeySeeds) -> (LeanSphincsPublicKey, Vec<Vec<Digest>>) {
     let top = tree_levels(seeds, &OtsKey::of_index(LAYERS - 1, 0));
-    LeanSphincsPublicKey {
+    let pk = LeanSphincsPublicKey {
         pk_seed: seeds.pk_seed,
         root: top[LAYER_HEIGHTS[LAYERS - 1]][0],
-    }
+    };
+    (pk, top)
 }
 
 /// `Gen`, on a fresh seed from the operating system's randomness.
@@ -304,12 +306,7 @@ pub fn sign(sk: &LeanSphincsSecretKey, message: &Message) -> Result<LeanSphincsS
 /// tree for `PK.root` and the top path, then the FORS instance and the two trees
 /// below.
 fn sign_with(seeds: &KeySeeds, message: &Message) -> Result<LeanSphincsSignature, LeanSphincsSignError> {
-    let top_height = LAYER_HEIGHTS[LAYERS - 1];
-    let top = tree_levels(seeds, &OtsKey::of_index(LAYERS - 1, 0));
-    let pk = LeanSphincsPublicKey {
-        pk_seed: seeds.pk_seed,
-        root: top[top_height][0],
-    };
+    let (pk, mut top) = keygen(seeds);
     let r = prf_msg(&seeds.sk_prf, &seeds.pk_seed, message);
     let (idx, leaves) = message_digest(&pk, &r, message);
     let (mut signed, fors) = fors_open(seeds, idx, &leaves);
@@ -317,12 +314,10 @@ fn sign_with(seeds: &KeySeeds, message: &Message) -> Result<LeanSphincsSignature
     for layer in 0..LAYERS {
         let key = OtsKey::of_index(layer, idx);
         let (counter, wots) = wots_sign(seeds, &key, &signed).ok_or(LeanSphincsSignError::NoAdmissibleEncoding)?;
-        let built;
         let levels = if layer == LAYERS - 1 {
-            &top
+            std::mem::take(&mut top)
         } else {
-            built = tree_levels(seeds, &key);
-            &built
+            tree_levels(seeds, &key)
         };
         let height = LAYER_HEIGHTS[layer];
         paths.extend((0..height).map(|z| levels[z][(key.leaf as usize >> z) ^ 1]));
@@ -393,11 +388,11 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let (pk_bytes, sig_bytes) = (unhex(), unhex());
-        let master = key_seeds(&std::array::from_fn(|i| (37 * i + 11) as u8));
-        let pk = public_key_of(&master);
+        let seeds = key_seeds(&std::array::from_fn(|i| (37 * i + 11) as u8));
+        let pk = keygen(&seeds).0;
         let message: Message = std::array::from_fn(|i| (7 * i + 3) as u8);
         assert_eq!(pk.to_bytes()[..], pk_bytes[..]);
-        let signature = sign_with(&master, &message).unwrap();
+        let signature = sign_with(&seeds, &message).unwrap();
         assert_eq!(signature.to_bytes()[..], sig_bytes[..]);
         assert_eq!(verify(&pk, &message, &signature), Ok(()));
     }

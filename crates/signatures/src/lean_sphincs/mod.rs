@@ -7,17 +7,18 @@
 //! public key. A public key is 32 bytes, a signature 7740, and a verification 515
 //! permutations.
 //!
-//! Every hash input is laid out as in FIPS 205's SHAKE instances, Keccak-256
-//! standing in for SHAKE256 and its output truncated to `n = 16` bytes: `F`, `H`,
-//! `T_l` and `PRF` hash `PK.seed | ADRS | M` with the 32-byte address of FIPS 205
-//! §4.2, and `PRF_msg` hashes `SK.prf | opt_rand | M`. `H_msg`, which needs more
-//! bytes than one call gives, is two calls on `R | PK.seed | PK.root | M` and a
-//! counter (the `hash` module).
+//! The hashes follow FIPS 205's SHAKE instances, Keccak-256 standing in for
+//! SHAKE256 and its output truncated to `n = 16` bytes: `F`, `H`, `T_l` and `PRF`
+//! hash `PK.seed | ADRS | M` with the 32-byte address of FIPS 205 §4.2, and
+//! `PRF_msg` hashes `SK.prf | opt_rand | M'`, `M'` being pure SLH-DSA's framing of
+//! the message under a fixed context. `H_msg`, which needs more bytes than one call
+//! gives, is two calls on `R | PK.seed | PK.root | M'` and a counter, and WOTS+C's
+//! encoding hash has an address type of its own (the `hash` module).
 //!
 //! The secret key is `SK.seed`, 32 bytes and the only secret: its hash under the
-//! scheme's tag gives `PK.seed` and `SK.prf`. Key generation builds the
-//! top tree, and signing it again for `PK.root`, then the FORS instance and the
-//! two trees below it.
+//! scheme's tag gives `PK.seed` and `SK.prf`. Key generation builds the top tree,
+//! and signing builds it again for `PK.root`, then the FORS instance and the two
+//! trees below it.
 
 mod hash;
 pub use hash::*;
@@ -108,7 +109,7 @@ pub const fn permutations(len: usize) -> usize {
 
 /// Permutations of one verification: `H_msg`, the FORS leaves and nodes, the
 /// FORS key, the encodings, the chains, the one-time keys and the paths.
-pub const VERIFY_PERMUTATIONS: usize = DIGEST_CALLS * permutations(3 * N + MESSAGE_LEN + 4)
+pub const VERIFY_PERMUTATIONS: usize = DIGEST_CALLS * permutations(3 * N + FRAMED_LEN + 4)
     + FORS_TREES * (permutations(PREFIX_LEN + N) + FORS_HEIGHT * permutations(PREFIX_LEN + 2 * N))
     + permutations(PREFIX_LEN + FORS_TREES * N)
     + LAYERS * permutations(PREFIX_LEN + N + COUNTER_LEN)

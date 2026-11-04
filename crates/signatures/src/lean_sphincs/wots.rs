@@ -45,14 +45,14 @@ impl OtsKey {
 }
 
 /// The starts of the `v` chains of a one-time key, one `PRF` each.
-pub fn wots_secrets(seeds: &KeySeeds, key: &OtsKey) -> [Digest; V] {
+fn wots_secrets(seeds: &KeySeeds, key: &OtsKey) -> [Digest; V] {
     let adrs = key.adrs(WOTS_PRF);
     std::array::from_fn(|i| prf(&seeds.pk_seed, &seeds.sk_seed, &adrs.with_chain(i as u32)))
 }
 
 /// `chain`: `steps` steps of chain `i` from position `start`; a step's hash
 /// address is the position it leaves.
-pub fn chain(pk_seed: &PkSeed, key: &OtsKey, i: usize, start: usize, steps: usize, value: Digest) -> Digest {
+fn chain(pk_seed: &PkSeed, key: &OtsKey, i: usize, start: usize, steps: usize, value: Digest) -> Digest {
     debug_assert!(start + steps < CHAIN_LEN);
     let adrs = key.adrs(WOTS_HASH).with_chain(i as u32);
     (start..start + steps).fold(value, |current, from| {
@@ -61,7 +61,7 @@ pub fn chain(pk_seed: &PkSeed, key: &OtsKey, i: usize, start: usize, steps: usiz
 }
 
 /// The Merkle leaf of a one-time key, its public key: `T_v` over its chain ends.
-pub fn wots_leaf_hash(pk_seed: &PkSeed, key: &OtsKey, ends: &[Digest; V]) -> Digest {
+fn wots_leaf_hash(pk_seed: &PkSeed, key: &OtsKey, ends: &[Digest; V]) -> Digest {
     th_digests(pk_seed, &key.adrs(WOTS_PK), ends)
 }
 
@@ -72,15 +72,11 @@ fn encoder(pk_seed: &PkSeed, key: &OtsKey, message: &Digest) -> primitives::hash
     hasher
 }
 
-fn encode_from(encoder: &primitives::hash::Hasher, c: u32) -> Option<[u8; V]> {
-    let output = encoder.clone().update(&c.to_be_bytes()).finalize();
-    codeword(&output[..N].try_into().unwrap())
-}
-
 /// `Enc(PK.seed, K, M, c) = Trunc_n(H(PK.seed | ADRS_enc(K) | M | BE_32(c)))` as a
 /// codeword, or `None` if this counter's digest is not one.
-pub fn encode(pk_seed: &PkSeed, key: &OtsKey, message: &Digest, c: u32) -> Option<[u8; V]> {
-    encode_from(&encoder(pk_seed, key, message), c)
+fn encode(encoder: &primitives::hash::Hasher, c: u32) -> Option<[u8; V]> {
+    let output = encoder.clone().update(&c.to_be_bytes()).finalize();
+    codeword(&output[..N].try_into().unwrap())
 }
 
 /// `base_2^w` (FIPS 205 Algorithm 4): the digest as `v` chunks of `w` bits, most
@@ -98,7 +94,7 @@ fn codeword(digest: &Digest) -> Option<[u8; V]> {
 pub fn wots_sign(seeds: &KeySeeds, key: &OtsKey, message: &Digest) -> Option<(u32, [Digest; V])> {
     let pk_seed = &seeds.pk_seed;
     let encoder = encoder(pk_seed, key, message);
-    let (c, x) = (0..MAX_ENCODING_ATTEMPTS).find_map(|c| encode_from(&encoder, c as u32).map(|x| (c as u32, x)))?;
+    let (c, x) = (0..MAX_ENCODING_ATTEMPTS).find_map(|c| encode(&encoder, c as u32).map(|x| (c as u32, x)))?;
     let secrets = wots_secrets(seeds, key);
     let signature = std::array::from_fn(|i| chain(pk_seed, key, i, 0, x[i] as usize, secrets[i]));
     Some((c, signature))
@@ -113,7 +109,7 @@ pub fn wots_leaf(
     c: u32,
     signature: &[Digest; V],
 ) -> Option<([u8; V], Digest)> {
-    let x = encode(pk_seed, key, message, c)?;
+    let x = encode(&encoder(pk_seed, key, message), c)?;
     let ends = std::array::from_fn(|i| {
         let start = x[i] as usize;
         chain(pk_seed, key, i, start, CHAIN_LEN - 1 - start, signature[i])

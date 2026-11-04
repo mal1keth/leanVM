@@ -388,8 +388,8 @@ LX_TOP = LX_TOP_PLACEHOLDER
 # The scheme's own letters, prefixed SP_: under each bottom leaf a FORS instance of
 # SP_FORS_TREES trees of height SP_FORS_HEIGHT, and above them three layers of trees
 # over WOTS+C keys of SP_V chains, of heights SP_HEIGHT_0, SP_HEIGHT_1 and SP_HEIGHT_2
-# from the bottom. Every hash is laid out as FIPS 205's: PK.seed, the 32-byte address
-# (two cells), then the payload.
+# from the bottom. A tree hash is PK.seed, FIPS 205's 32-byte address (two cells),
+# then the payload.
 SP_V = SP_V_PLACEHOLDER
 SP_TARGET_SUM = SP_TARGET_SUM_PLACEHOLDER
 SP_HEIGHT_0 = SP_HEIGHT_0_PLACEHOLDER
@@ -405,8 +405,16 @@ SP_FORS_HEIGHT = SP_FORS_HEIGHT_PLACEHOLDER
 # holding the 2 bits the others leave; then the bottom leaf, one byte.
 SP_CELL_BITS = 2 * BASE_FIELD_BITS
 SP_MD_BYTES = SP_FORS_TREES * SP_FORS_HEIGHT // 8
-# H_msg's second call ends with its counter, BE_32(1), as its cell holds it.
-SP_DIGEST_ONE = 2 ** 24
+# A codeword's digits in each byte of its encoding digest, base_2b.
+SP_DIGITS_PER_BYTE = 8 // W
+# H_msg hashes M' = 0x00 | len(ctx) | ctx | M, whose framing, SP_CONTEXT_BYTES bytes,
+# is SP_CONTEXT as its cell holds it, M's first bytes after it; its second call ends
+# with its counter, BE_32(1), whose last byte starts a cell.
+SP_CONTEXT = SP_CONTEXT_PLACEHOLDER
+SP_CONTEXT_BYTES = 13
+# M's 64-bit lanes split there: SP_SPLIT low bytes end one cell, the rest start the
+# next.
+SP_SPLIT = 16 - SP_CONTEXT_BYTES
 # FIPS 205's address is two cells, A0 the layer and the tree words and A1 the type
 # and the three words after it, each word big endian, so a value's low byte is its
 # word's last. The cell bit each such byte starts at:
@@ -3392,12 +3400,16 @@ def walk_group(at, pp, walks, tags, first: Const, n: Const, k: Const, lx: Const,
     # dispatch for all of them. Folds the digits' sum into `product`, in the
     # exponent (`powers[s]` is GEN ** s), and the digits into `encoded`, where the
     # encoding digest holds them: leanXMSS's low first, leanSPHINCS's most
-    # significant first in each byte (base_2b), digit j at bit
-    # 8 (j // (8 / W)) + 8 - W - W (j % (8 / W)), written out for DIGIT_GROUP = 3 (a
-    # digit past the last chain is zero, its j taken mod SP_V to stay in range).
+    # significant first in each byte (base_2b).
     for r in unroll(0, n):
         walk(at, pp, walks, tags, first + r, (k // CHAIN_LENGTH ** r) % CHAIN_LENGTH, lx)
-    return product * powers[DIGIT_SUMS[k]], encoded + const(lx * k * CHAIN_LENGTH ** first + (1 - lx) * ((k % CHAIN_LENGTH) * 2 ** (8 * (first // (8 // W)) + 8 - W - W * (first % (8 // W))) + ((k // CHAIN_LENGTH) % CHAIN_LENGTH) * 2 ** (8 * (((first + 1) % SP_V) // (8 // W)) + 8 - W - W * (((first + 1) % SP_V) % (8 // W))) + ((k // CHAIN_LENGTH ** 2) % CHAIN_LENGTH) * 2 ** (8 * (((first + 2) % SP_V) // (8 // W)) + 8 - W - W * (((first + 2) % SP_V) % (8 // W)))))
+    if const(lx == 1):
+        digits = const(k * CHAIN_LENGTH ** first)
+    else:
+        digits = 0
+        for r in unroll(0, n):
+            digits = digits + const(((k // CHAIN_LENGTH ** r) % CHAIN_LENGTH) * 2 ** (8 * ((first + r) // SP_DIGITS_PER_BYTE) + W * (SP_DIGITS_PER_BYTE - 1 - (first + r) % SP_DIGITS_PER_BYTE)))
+    return product * powers[DIGIT_SUMS[k]], encoded + digits
 
 
 @inline
@@ -3520,11 +3532,11 @@ def verify_lean_xmss(signer):
 
 
 @inline
-def sp_from_bytes(byte_bits, marks, n: Const):
-    # The integer whose n bytes, low first, are hinted in the exponent at marks[k]:
+def sp_from_bytes(byte_bits, marks, n: Const, off: Const):
+    # The integer whose n bytes, low first, are hinted in the exponent at marks[off + k]:
     # each range checked and read off `byte_bits` as the bits it spells.
     for t in unroll(0, n):
-        k = n - 1 - t
+        k = off + n - 1 - t
         assert log(marks[k]) < SP_BYTE_VALUES
         if const(t == 0):
             value = byte_bits[marks[k]]
@@ -3696,13 +3708,15 @@ def sp_path(node, pp, a0, bits1, bits2, lvals, out, off: Const, height: Const):
         kids = StackBuf(2)
         hint_witness(kids, "siblings")
         is_child(cur, kids, 0, sp_leaf_bit(bits1, bits2, off + z))
+        # The parent's height, then its index, none at the root.
+        node_at = const(SP_TREE + (z + 1) * SP_WORD2_MUL)
         if const(z + 1 == height):
-            keccak([pp, a0], [const(SP_TREE + height * SP_WORD2_MUL), kids[0]], out, tail=[kids[1], 0, 0, 0], len=80)
+            parent = out
         else:
-            node_at = sp_be16(lvals, off + z + 1, height - z - 1) + const(SP_TREE + (z + 1) * SP_WORD2_MUL)
+            node_at = sp_be16(lvals, off + z + 1, height - z - 1) + node_at
             parent = StackBuf(KECCAK_STATE)
-            keccak([pp, a0], [node_at, kids[0]], parent, tail=[kids[1], 0, 0, 0], len=80)
-            cur = parent[0]
+        keccak([pp, a0], [node_at, kids[0]], parent, tail=[kids[1], 0, 0, 0], len=80)
+        cur = parent[0]
     return
 
 
@@ -3712,7 +3726,7 @@ def sp_layer(pp, a0, key, signed, byte_bits, bits1, bits2, lvals, out, off: Cons
     # its counter rebuilt from four bytes, then the path to its tree's root into out.
     ctr = StackBuf(SP_COUNTER_BYTES)
     hint_witness(ctr, "sp_counter")
-    counter = sp_from_bytes(byte_bits, ctr, SP_COUNTER_BYTES)
+    counter = sp_from_bytes(byte_bits, ctr, SP_COUNTER_BYTES, 0)
     enc = StackBuf(KECCAK_STATE)
     enc_at = key + const(SP_WOTS_ENC)
     keccak([pp, a0], [enc_at, signed], enc, tail=[counter, 0, 0, 0], len=SP_ENCODING_BYTES)
@@ -3729,12 +3743,30 @@ def verify_sig_lean_sphincs(signer, byte_bits):
     pk_root = signer[GEN]
 
     # ---- H_msg, which picks the index and every FORS leaf ----
-    # H(R | PK.seed | PK.root | M | BE_32(i)) for i = 0, 1, 84 bytes each.
+    # H(R | PK.seed | PK.root | M' | BE_32(i)) for i = 0, 1, 97 bytes each. M' puts M
+    # SP_CONTEXT_BYTES into a cell, so M's bytes are hinted and range checked, each of
+    # its four lanes rebuilt as its SP_SPLIT low bytes and the rest, the parts checked
+    # to be M's two cells, then laid out shifted.
+    msg = StackBuf(32)
+    hint_witness(msg, "sp_msg")
+    lo = StackBuf(4)
+    hi = StackBuf(4)
+    for j in unroll(0, 4):
+        lo[j] = sp_from_bytes(byte_bits, msg, SP_SPLIT, 8 * j)
+        hi[j] = sp_from_bytes(byte_bits, msg, 8 - SP_SPLIT, 8 * j + SP_SPLIT)
+    lane = StackBuf(4)
+    for j in unroll(0, 4):
+        lane[j] = lo[j] + hi[j] * GEN ** (8 * SP_SPLIT)
+    assert lane[0] + lane[1] * const(2 ** 64) == signer[GEN ** 2]
+    assert lane[2] + lane[3] * const(2 ** 64) == signer[GEN ** 3]
+    m0 = const(SP_CONTEXT) + lo[0] * const(2 ** (64 + 8 * (8 - SP_SPLIT)))
+    m1 = hi[0] + lo[1] * GEN ** (8 * (8 - SP_SPLIT)) + (hi[1] + lo[2] * GEN ** (8 * (8 - SP_SPLIT))) * const(2 ** 64)
+    m2 = hi[2] + lo[3] * GEN ** (8 * (8 - SP_SPLIT)) + hi[3] * const(2 ** 64)
     rho = hint_witness("sp_rand")
     d0 = StackBuf(KECCAK_STATE)
     d1 = StackBuf(KECCAK_STATE)
-    keccak([rho, pp], [pk_root, signer[GEN ** 2]], d0, tail=[signer[GEN ** 3], 0, 0, 0], len=84)
-    keccak([rho, pp], [pk_root, signer[GEN ** 2]], d1, tail=[signer[GEN ** 3], SP_DIGEST_ONE, 0, 0], len=84)
+    keccak([rho, pp], [pk_root, m0], d0, tail=[m1, m2, 0, 0], len=97)
+    keccak([rho, pp], [pk_root, m0], d1, tail=[m1, m2, 1, 0], len=97)
 
     # The digest's bits are advice pinned Boolean, and the digest is rebuilt from them:
     # byte by byte from the FORS leaves' values, which their shifts give, then the tree
@@ -3762,7 +3794,7 @@ def verify_sig_lean_sphincs(signer, byte_bits):
     md0 = sp_md_byte(vals, 0, 0)
     for i in unroll(1, 16):
         md0 = md0 + sp_md_byte(vals, i, (8 * i) // SP_FORS_HEIGHT)
-    md1 = sp_md_byte(vals, 16, 128 // SP_FORS_HEIGHT)
+    md1 = sp_md_byte(vals, 16, (8 * 16) // SP_FORS_HEIGHT)
     for i in unroll(17, SP_MD_BYTES):
         md1 = md1 + sp_md_byte(vals, i, (8 * i) // SP_FORS_HEIGHT)
     # The tree index's middle byte, the top leaf's low byte; its high byte holds the top
@@ -3775,7 +3807,7 @@ def verify_sig_lean_sphincs(signer, byte_bits):
     d0[1] = md1 + (lvals[24] + pad * GEN ** 2) * const(2 ** 112) + tree_mid * const(2 ** 120)
     unused_bytes = StackBuf(SP_UNUSED_BYTES)
     hint_witness(unused_bytes, "sp_unused")
-    unused = sp_from_bytes(byte_bits, unused_bytes, SP_UNUSED_BYTES)
+    unused = sp_from_bytes(byte_bits, unused_bytes, SP_UNUSED_BYTES, 0)
     high = (d1[0] + lvals[8] + lvals[0] * GEN ** 8 + unused * GEN ** 16) * Y_INV
     assert_in_k(high, unused)
 
