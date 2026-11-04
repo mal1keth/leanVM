@@ -3,6 +3,8 @@
 
 use crate::python_verifier::{encode, fixture};
 use leanvm_core::cpu::{prove, public_input_bytes, scalar_proof, verify};
+use leanvm_core::tables::N_TABLES;
+use primitives::field::F192;
 use verifier::{Bytecode, MerkleOpenings, Proof, replay_unchecked, verify_execution};
 
 #[test]
@@ -55,4 +57,27 @@ fn replay_reads_the_summary_unchecked() {
     let (stream, openings) = encode(&fixture.proof.stream, &fixture.summary.merkle_paths);
     let raw_proof = Proof::load(&stream, &openings).expect("load the honest proof");
     assert_eq!(replay(&raw_proof).as_ref(), Ok(&fixture.summary));
+}
+
+/// What the transcript absorbs and squeezes is fixed by the bytecode and the announced sizes (`sec:e2e-fiat-shamir`):
+/// with every later scalar changed, and so every challenge, the replay still reads the stream and the openings to
+/// their end, the Keccak reduction's scalars where they were.
+#[test]
+fn only_the_sizes_shape_the_transcript() {
+    let fixture = fixture();
+    let table = fixture.bytecode_table();
+    let bytecode = Bytecode::new(&table);
+    let public_input = public_input_bytes(&fixture.public_input);
+    let mut stream = fixture.proof.stream.clone();
+    for scalar in &mut stream[2 + N_TABLES..] {
+        *scalar += F192::ONE;
+    }
+    let (stream, openings) = encode(&stream, &fixture.summary.merkle_paths);
+    let proof = Proof::load(&stream, &openings).expect("load the changed proof");
+    let summary = replay_unchecked(&bytecode, &public_input, &proof).expect("the changed proof walks whole");
+    assert_eq!(summary.keccak_scalars, fixture.summary.keccak_scalars);
+    assert_ne!(
+        summary.bytecode_point, fixture.summary.bytecode_point,
+        "the challenges changed"
+    );
 }
