@@ -225,10 +225,15 @@ fn lean_sphincs_footprint() -> u64 {
         .hash(&mut hasher);
     // The key derivation and the tweakable hash, so a change to either
     // invalidates the file.
-    lean_sphincs::public_param(&lean_sphincs::scheme_seed(&[0x11; lean_sphincs::SEED_LEN])).hash(&mut hasher);
+    lean_sphincs::key_seeds(&[0x11; lean_sphincs::SEED_LEN])
+        .pk_seed
+        .hash(&mut hasher);
     lean_sphincs::th(
-        &[0xA5; lean_sphincs::PUBLIC_PARAM_LEN],
-        &lean_sphincs::tweak(1, 2, 3).step(4).at(2, 5),
+        &[0xA5; lean_sphincs::N],
+        &lean_sphincs::Adrs::new(2, 5)
+            .with_type(1)
+            .with_key_pair(3)
+            .with_chain(4),
         &[0x3C; 16],
     )
     .hash(&mut hasher);

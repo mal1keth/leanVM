@@ -18,7 +18,7 @@
   </tr>
   <tr>
     <td><a href="#leansphincs-aggregation">leanSPHINCS aggregation</a></td>
-    <td align="right"><b>440/s</b></td>
+    <td align="right"><b>395/s</b></td>
   </tr>
   <tr>
     <td><a href="#data-availability">leanDA commitment</a></td>
@@ -90,17 +90,17 @@ aggregation, 1,400 leanXMSS signatures
 The leanSPHINCS parameters are specified in [leanSPHINCS.pdf](https://github.com/leanEthereum/leanVM/releases/download/doc-latest/leanSPHINCS.pdf), with a [(ROM) security proof in Lean 4](formal/lean_sphincs/README.md). **This is not the definitive parameter set.**
 
 ```bash
-cargo leanvm aggregate --sphincs 530 --log-inv-rate 1 --repeat 3
+cargo leanvm aggregate --sphincs 440 --log-inv-rate 1 --repeat 3
 ```
 
 ```
-aggregation, 530 leanSPHINCS signatures
-  cycles (VM steps)           : 2,619,077 = 2^21.321
-    details                   : XOR 2^19.934 (38.2%)  MUL 2^19.394 (26.3%)  SET 2^18.74 (16.7%)  KECCAK 2^17.994 (10.0%)  DEREF 2^17.262 (6.0%)  JUMP 2^16.143 (2.8%)  MEMORY 2^23.178  BYTECODE 2^18.153  TOTAL_COMMITTED 2^26.983
-  proof size                  : 373.6 KiB
-  proving time                : 1.197 s ± 4.0%      peak memory 8.991 GiB
-  per signature               : 442.623 signatures/s
-  verifying                   : 7.101 ms
+aggregation, 440 leanSPHINCS signatures
+  cycles (VM steps)           : 2,874,583 = 2^21.455
+    details                   : XOR 2^19.735 (30.4%)  SET 2^19.635 (28.3%)  MUL 2^19.555 (26.8%)  KECCAK 2^17.794 (7.9%)  DEREF 2^16.994 (4.5%)  JUMP 2^15.873 (2.1%)  MEMORY 2^23.082  BYTECODE 2^18.16  TOTAL_COMMITTED 2^26.997
+  proof size                  : 376.0 KiB
+  proving time                : 1.112 s ± 2.0%      peak memory 8.557 GiB
+  per signature               : 395.708 signatures/s
+  verifying                   : 7.102 ms
 ```
 
 ### data availability

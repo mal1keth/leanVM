@@ -90,23 +90,25 @@ pub const MAX_KEYS: usize = 1 << 16;
 // the guest and another in the statement, and nothing else would notice.
 const _: () = assert!(leanvm_core::leaf::N_TUPLE_BITS == leanvm_core::leaf::N_BYTECODE_SELECTORS);
 // Both schemes' one-time keys go through the guest's one WOTS+C walk: the same chain
-// length, digits dispatched DIGIT_GROUP at a time and the last chain alone, and the
-// same address types (`signatures`' shared tweak). A chain step's address leaves out the
-// chain index in leanXMSS, where it follows the value.
+// length, digits dispatched DIGIT_GROUP at a time and the last chain alone. A chain
+// step's address leaves out the chain index in leanXMSS, where it follows the value.
 const DIGIT_GROUP: usize = 3;
 const _: () = assert!(lean_sphincs::W * lean_sphincs::V == 128 && lean_sphincs::V % DIGIT_GROUP == 1);
 const _: () = assert!(lean_xmss::W == lean_sphincs::W && lean_xmss::V % DIGIT_GROUP == 1);
 // A leaf index is the two layers' indices, which the guest decomposes into bits at once.
 const _: () = assert!(lean_xmss::LOG_LIFETIME == 32);
-// The guest reads the leanSPHINCS digest's fields as one bit string: its first call's
-// two cells, then the low lane of its second call's first cell, where the bits past the
-// fields are unused. It rebuilds the bottom tree's index from three layers' leaves.
-const _: () = assert!(lean_sphincs::DIGEST_CALLS == 2 && lean_sphincs::DIGEST_BITS > 256);
-const _: () = assert!(LEAN_SPHINCS_TAIL_BITS < 64 && lean_sphincs::LAYERS == 3);
-const _: () = assert!(lean_sphincs::FORS_HEIGHT <= 64 && lean_sphincs::H <= 64);
-// It places a FORS leaf at bit 6 of its address's `hi` field and a node index at bit
-// 10, past the tree and the level (`SP_FLEAF_SHIFT`, `SP_FNODE_SHIFT`).
-const _: () = assert!(lean_sphincs::fors_hi(0, 1) == 1 << 6 && lean_sphincs::fors_hi(0, 1 << 4) == 1 << 10);
+// The guest reads the leanSPHINCS digest as this shape lays it out: the FORS leaves
+// fill the first call's first 30 bytes, each byte in at most two of them, the tree
+// index's three bytes follow, the last in the second call, then the bottom leaf.
+// It reads the layers' leaves off those bytes, and places a FORS tree index in two
+// bytes and a codeword's digits four to a byte.
+const _: () = assert!(lean_sphincs::LAYER_HEIGHTS[0] == 8 && lean_sphincs::LAYER_HEIGHTS[1] == 8);
+const _: () = assert!(lean_sphincs::LAYER_HEIGHTS[2] == 10 && lean_sphincs::LAYERS == 3);
+const _: () = assert!(lean_sphincs::MD_BYTES == 30 && lean_sphincs::FORS_TREES * lean_sphincs::FORS_HEIGHT == 240);
+const _: () =
+    assert!(lean_sphincs::FORS_HEIGHT >= 8 && lean_sphincs::FORS_TREES << lean_sphincs::FORS_HEIGHT <= 1 << 16);
+const _: () = assert!(lean_sphincs::TREE_INDEX_BYTES == 3 && lean_sphincs::LEAF_INDEX_BYTES == 1);
+const _: () = assert!(lean_sphincs::DIGEST_CALLS == 2 && lean_sphincs::W == 2 && DIGIT_GROUP == 3);
 
 /// A count as the guest carries it: in the exponent, `g^n`.
 fn count(n: usize) -> F192 {
@@ -120,10 +122,6 @@ fn exponent_bytes(value: u64, bits: usize) -> Vec<F192> {
         .map(|k| count((value >> (8 * k) & 0xff) as usize))
         .collect()
 }
-
-/// The leanSPHINCS digest's field bits in its second call's output, the low bits of
-/// its first lane.
-const LEAN_SPHINCS_TAIL_BITS: usize = lean_sphincs::DIGEST_BITS - 256;
 
 /// A field element as the decimal `u128` literal the zkDSL parser accepts.
 fn dsl_u128(value: F192) -> u128 {
@@ -185,7 +183,7 @@ fn claim_list_digest(claims: impl IntoIterator<Item = [F192; 4]>) -> [F192; 2] {
 }
 
 /// A claim as the four cells the guest hashes and its verifier reads: the pubkey's
-/// root and public parameter (`to_bytes`), then the message that pubkey signed.
+/// two halves (`to_bytes`), then the message that pubkey signed.
 fn claim_cells(pk: &[u8; 32], message: &[u8; 32]) -> [F192; 4] {
     [
         pack_16_bytes(&pk[..16]),
@@ -1455,10 +1453,10 @@ fn lean_xmss_hints(
     Ok(hints)
 }
 
-/// One leanSPHINCS signature's witness: the randomizer, the digest's bits past its
-/// fields, each FORS tree's secret and the ordered children of every node on its
-/// climb, its two top nodes last, then per layer, bottom first, the encoding counter,
-/// the codeword digits (three at a time, in the exponent), the chain values they start
+/// One leanSPHINCS signature's witness: the randomizer, the six bytes of `H_msg`'s
+/// second call that end its low lane past the digest, each FORS tree's secret and the ordered children of every node
+/// on its climb, then per layer, bottom first, the encoding counter's bytes, the
+/// codeword digits (three at a time, in the exponent), the chain values they start
 /// from, and the ordered children of every node on the key's path.
 ///
 /// The guest derives the index and every FORS leaf from the digest itself, so
@@ -1469,38 +1467,36 @@ fn lean_sphincs_hints(
     sig: &LeanSphincsSignature,
     message: &lean_sphincs::Message,
 ) -> Result<SubHints, AggregationError> {
-    let pp = pk.public_param();
+    let pk_seed = pk.pk_seed();
     let mut hints: SubHints = vec![("sp_rand", vec![pack_16_bytes(sig.randomizer())])];
-    let digest = lean_sphincs::message_digest_bytes(pp, sig.randomizer(), message);
+    let digest = lean_sphincs::h_msg(sig.randomizer(), pk_seed, pk.root(), message);
     let (idx, leaves) = lean_sphincs::digest_fields(&digest);
+    // The second call's low lane past the digest's two bytes.
     let lane = u64::from_le_bytes(digest[32..40].try_into().unwrap());
-    hints.push((
-        "sp_unused",
-        exponent_bytes(lane >> LEAN_SPHINCS_TAIL_BITS, 64 - LEAN_SPHINCS_TAIL_BITS),
-    ));
+    hints.push(("sp_unused", exponent_bytes(lane >> 16, 48)));
     for tree in sig.fors() {
         hints.push(("sp_fors_secrets", vec![pack_16_bytes(tree.secret())]));
     }
     // On every path the guest does not order a node and its sibling: it is handed the
     // two children in order and checks that the node it holds is the one its bit names.
     let ordered = |pair: &[lean_sphincs::Digest; 2]| vec![pack_16_bytes(&pair[0]), pack_16_bytes(&pair[1])];
-    let fors_key = lean_sphincs::fors_recover(pp, idx, &leaves, sig.fors(), |pair| {
+    let mut signed = lean_sphincs::fors_recover(pk_seed, idx, &leaves, sig.fors(), |pair| {
         hints.push(("sp_fors_nodes", ordered(pair)));
     });
-    let mut signed = lean_sphincs::fors_key_bytes(&fors_key).to_vec();
     for (layer, layer_sig) in sig.layers().iter().enumerate() {
         let key = lean_sphincs::OtsKey::of_index(layer, idx);
-        let (codeword, leaf) = lean_sphincs::wots_leaf(pp, &key, &signed, layer_sig.counter(), layer_sig.wots())
+        let (codeword, leaf) = lean_sphincs::wots_leaf(pk_seed, &key, &signed, layer_sig.counter(), layer_sig.wots())
             .ok_or(AggregationError::MalformedRawSignature)?;
-        hints.push(("sp_counter", exponent_bytes(u64::from(layer_sig.counter()), 32)));
+        // The counter's bytes as its hash input holds them, big endian.
+        let counter = u32::from_le_bytes(layer_sig.counter().to_be_bytes());
+        hints.push(("sp_counter", exponent_bytes(u64::from(counter), 32)));
         hints.extend(digit_hints(&codeword).map(|entry| ("digits", entry)));
         for value in layer_sig.wots() {
             hints.push(("chain_starts", vec![pack_16_bytes(value)]));
         }
-        let root = lean_sphincs::tree_fold(pp, &key, leaf, sig.path(layer), |pair| {
+        signed = lean_sphincs::tree_fold(pk_seed, &key, leaf, sig.path(layer), |pair| {
             hints.push(("siblings", ordered(pair)));
         });
-        signed = root.to_vec();
     }
     Ok(hints)
 }
@@ -2499,14 +2495,26 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("MAX_RECURSIONS", MAX_RECURSIONS.to_string());
 
     // The leanSPHINCS instance. Its addresses are derived per signature from the
-    // index the message digest picks, so the guest receives the shape and each hash
-    // type of its own as the address lane holds it. A hypertree address holds its
-    // layer and tree in the high lane, the layer in its low byte (`SP_LAYER_MUL`,
-    // `SP_TREE_MUL`).
-    assert_eq!(
-        pack_16_bytes(&lean_sphincs::address(&lean_sphincs::tweak(0, 0, 0).at(1, 1))),
-        F192::new(0, 1 | 1 << 8, 0)
-    );
+    // index the message digest picks, so the guest receives the shape and each address
+    // type as A1, the address's second cell, holds it, and places a field's bytes at the
+    // cell bits its SP_*_MUL constants name, which are these.
+    use lean_sphincs::Adrs;
+    let cell = |adrs: Adrs, half: usize| dsl_u128(pack_16_bytes(&adrs.as_bytes()[16 * half..][..16]));
+    let at = Adrs::new(0, 0);
+    assert_eq!(lean_sphincs::WOTS_HASH, 0);
+    for (adrs, half, bit) in [
+        (Adrs::new(1, 0), 0, 24),
+        (Adrs::new(0, 1), 0, 120),
+        (Adrs::new(0, 1 << 8), 0, 112),
+        (Adrs::new(0, 1 << 16), 0, 104),
+        (at.with_key_pair(1), 1, 56),
+        (at.with_key_pair(1 << 8), 1, 48),
+        (at.with_chain(1), 1, 88),
+        (at.with_tree_index(1), 1, 120),
+        (at.with_tree_index(1 << 8), 1, 112),
+    ] {
+        assert_eq!(cell(adrs, half), 1 << bit);
+    }
     ps("SP_V", lean_sphincs::V.to_string());
     ps("SP_TARGET_SUM", lean_sphincs::TARGET_SUM.to_string());
     for (layer, height) in lean_sphincs::LAYER_HEIGHTS.iter().enumerate() {
@@ -2514,15 +2522,14 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     }
     ps("SP_FORS_TREES", lean_sphincs::FORS_TREES.to_string());
     ps("SP_FORS_HEIGHT", lean_sphincs::FORS_HEIGHT.to_string());
-    for (name, tag) in [
-        ("SP_TW_ENC", lean_sphincs::TWEAK_ENC),
-        ("SP_TW_FLEAF", lean_sphincs::TWEAK_FORS_LEAF),
-        ("SP_TW_FNODE", lean_sphincs::TWEAK_FORS_NODE),
+    for (name, t) in [
+        ("SP_WOTS_PK", lean_sphincs::WOTS_PK),
+        ("SP_TREE", lean_sphincs::TREE),
+        ("SP_FORS_TREE", lean_sphincs::FORS_TREE),
+        ("SP_FORS_ROOTS", lean_sphincs::FORS_ROOTS),
+        ("SP_WOTS_ENC", lean_sphincs::WOTS_ENC),
     ] {
-        ps(
-            name,
-            dsl_u128(pack_16_bytes(&lean_sphincs::address(&lean_sphincs::tweak(tag, 0, 0)))).to_string(),
-        );
+        ps(name, cell(at.with_type(t), 1).to_string());
     }
     rep
 }
@@ -2735,7 +2742,7 @@ mod tests {
     }
 
     /// A leanSPHINCS signature's digest and openings are bound in-circuit: a node whose
-    /// hints put the digest's unused bits off by one, order a FORS node and its sibling
+    /// hints put the digest's unused bytes off by one, order a FORS node and its sibling
     /// the other way, or give a layer another counter fails the guest's run.
     #[test]
     fn forged_lean_sphincs_hints_are_rejected() {
@@ -3637,7 +3644,7 @@ def main():
         let (public_key, signed, signature) = get_lean_sphincs_signers(1).pop().expect("one signer");
         // The bottom layer's counter follows the randomizer and the FORS openings.
         let mut bytes = signature.to_bytes();
-        bytes[lean_sphincs::RANDOMIZER_LEN + lean_sphincs::FORS_TREES * lean_sphincs::FORS_OPENING_SIZE] ^= 1;
+        bytes[lean_sphincs::N + lean_sphincs::FORS_TREES * lean_sphincs::FORS_OPENING_SIZE] ^= 1;
         let signature = LeanSphincsSignature::from_bytes(&bytes);
         assert!(lean_sphincs::verify(&public_key, &signed, &signature).is_err());
         let raw = vec![(public_key, signed, signature)];
