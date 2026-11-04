@@ -1,4 +1,4 @@
-<!-- Draft reply for https://github.com/leanEthereum/leanVM/issues/529, posted from Adi's own account. Everything between the two rules below is the comment. Replace [notes] with a link to .contrib/529-analysis.md on a public branch, or drop that line. -->
+<!-- Draft reply for https://github.com/leanEthereum/leanVM/issues/529, posted from Adi's own account. Everything between the two rules below is the comment. The notes link is a permalink to the analysis on the public fork. -->
 
 ---
 
@@ -29,6 +29,6 @@ So my current view: the collision is harmless for a reason that can be stated pr
 2. Which construction, and what about it, did the concern refer to: #523's step, `main`'s BLAKE2s chain, or duplex challengers in general? `main` is now the last kind, so I'd like the argument to answer what was actually seen.
 3. Would a PR that writes the per-shape mapping, the two gaps and the scope into §8, with a test pinning the read schedule, be useful? It changes no prover, verifier or guest code; it adds the schedule rule to AGENTS.md's Fiat-Shamir convention. Or would you rather see the extension for prover-chosen sizes worked out first?
 
-Notes, with the mapping, the checks and the measurements: [notes]
+Notes, with the mapping, the checks and the measurements: [mal1keth/leanVM `.contrib/529-analysis.md`](https://github.com/mal1keth/leanVM/blob/1798ed78d6822a813d19a48d224f58807f4aa400/.contrib/529-analysis.md)
 
 ---
