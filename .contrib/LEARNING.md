@@ -1,6 +1,6 @@
 # Learning guide: leanVM's Fiat-Shamir transcript
 
-A guide to the part of leanVM this work touched: how a proof's challenges are derived, where that happens in each of the four implementations, why the construction is (mostly) sound, and where the known gaps are. Line numbers are against upstream `main` at `23a305b`, which this branch leaves unchanged outside the files listed in `WORKLOG.md`.
+A guide to the part of leanVM this work touched: how a proof's challenges are derived, where that happens in each of the four implementations, why the construction is (mostly) sound, and where the known gaps are. Line numbers are against this branch's head, which is identical to upstream `main` at `23a305b` outside the files listed in `WORKLOG.md`.
 
 Suggested pace: §1 and §2 in one sitting, §3 with the code open beside it, then the exercises in §7.
 
@@ -8,7 +8,7 @@ Suggested pace: §1 and §2 in one sitting, §3 with the code open beside it, th
 
 A leanVM proof is an interactive protocol made non-interactive. In the interactive version, the prover sends messages (commitments, sumcheck round polynomials, evaluations) and the verifier answers with random challenges. **Fiat-Shamir** replaces the verifier's randomness with a hash of everything said so far: both sides run the same hash, called the **transcript**, so the prover can compute the challenges itself and the proof becomes one string.
 
-In leanVM the transcript is a **duplex sponge** over **Keccak-f[1600]**, the 1600-bit permutation inside Keccak-256. The prover's messages are field elements of `E = GF(2^192)`, called scalars. Everything rests on one discipline, stated at the top of `crates/fiat_shamir/src/transcript.rs`: **sending a scalar and binding it into the transcript are one act**. Nothing reaches the verifier without being hashed into every later challenge.
+In leanVM the transcript is a **duplex sponge** over **Keccak-f[1600]**, the 1600-bit permutation inside Keccak-256. The prover's messages are field elements of `E = GF(2^192)`, called scalars. Everything rests on one discipline, stated at the top of `crates/fiat_shamir/src/transcript.rs`: **sending a scalar and binding it into the transcript are one act**. Nothing on the scalar stream reaches the verifier without being hashed into every later challenge; Merkle openings travel beside the stream and are bound only through their roots, which were (§3.2).
 
 The same protocol is implemented four times, and they must agree bit for bit:
 
@@ -33,7 +33,7 @@ The guest is why the design looks the way it does: every transcript operation th
 
 **Soundness notions.** *Soundness*: no prover convinces the verifier of a false statement except with small probability. *Round-by-round (RBR) soundness*: each verifier challenge has a small chance of rescuing a prover who was already losing. *State-restoration (SR) soundness*: soundness against a prover who may rewind to any earlier point and retry, which is exactly what a Fiat-Shamir prover can do by rehashing. RBR implies SR, and SR is what Fiat-Shamir needs. *Knowledge soundness*: from any convincing prover, a witness can be extracted. For signature aggregation this, not plain soundness, is the property that matters: for an honestly generated key a valid signature exists for every message, so "a signature exists" proves nothing.
 
-**CO25.** Chiesa and Orrù, *A Fiat-Shamir Transformation From Duplex Sponges* (TCC 2025). They prove that Fiat-Shamir over an overwrite-mode duplex with an ideal permutation (their DSFS, Construction 4.3) has soundness error at most the protocol's SR error plus `25t²/|Σ|^c` for `t` permutation queries (Theorem 6.1). A **codec** (Definition 4.1) says how prover messages become sponge input (injective) and how sponge output becomes challenges (low bias). DSFS hashes no framing at all; what replaces framing is that every round's length is fixed in advance.
+**CO25.** Chiesa and Orrù, *A Fiat-Shamir Transformation From Duplex Sponges* (TCC 2025). They prove that Fiat-Shamir over an overwrite-mode duplex with an ideal permutation (their DSFS, Construction 4.3) has soundness error at most the protocol's SR error (at `t` moves) plus `25t²/|Σ|^c` plus the codec's bias terms `t·max ε_cdc,i + Σ ε_cdc,i`, for `t` permutation queries (Theorem 6.1). For leanVM the bias terms are zero, since three uniform lanes are a uniform element of `E`. A **codec** (Definition 4.1) says how prover messages become sponge input (injective) and how sponge output becomes challenges (low bias). DSFS hashes no framing at all; what replaces framing is that every round's length is fixed in advance.
 
 **SAFE.** Aumasson, Khovratovich, Mennink and Quine's sponge API. It handles the same problem differently: the whole sequence of absorb and squeeze lengths (the *IO pattern*) is hashed into a tag placed in the capacity at the start.
 
@@ -55,7 +55,7 @@ Read the module comment at the top first; it is the specification in eight lines
 - `duplex` (84): one permutation; returns lanes `0..3` as the challenge; zeroes the rate; resets `n_pending`.
 - `absorb` (92): if four scalars already wait, permute first; then write the scalar as `(c0, c1, c2, tag)` into lanes `4k..4k+4`.
 - `observe` (116) is `absorb` with tag 1. `sample` (124) is just `duplex`: **every challenge costs its own permutation**, even two in a row.
-- `pow_bits_ok` (137) and `grind_pow` (154): the proof of work. The nonce is absorbed with tag 4, a challenge is drawn, and its low `bits` bits must be zero. The search is batched and parallel, and it always returns the smallest valid nonce.
+- `pow_bits_ok` (137) and `grind_pow` (154): the proof of work. The nonce is absorbed with tag 4, a challenge is drawn, and its low `bits` bits must be zero. For grinds of 13 bits or more (production uses 17) the search is batched and parallel, smaller ones scan sequentially, and either way it returns the smallest valid nonce.
 - Tests at the bottom; `fs_binds_length` (236) is the one that pins the tags' purpose.
 
 ### 3.2 The prover's transport: `crates/fiat_shamir/src/transcript.rs`
@@ -102,8 +102,8 @@ Every count in these calls is a constant or comes from the layout, never from a 
 The Fiat-Shamir section starts at line 527 with a comment worth reading. The guest holds the sponge as the 13-cell output of its last `KECCAK`. A VM cell carries two lanes (`crates/leanvm_core/src/keccak.rs:64`, `cell_lanes`), so a scalar's four lanes are two cells.
 
 - `fs_pack` (538): writes a scalar as two rate cells, hinting its limbs and checking them.
-- `fs_perm` (550): one `KECCAK` with `k` waiting scalars, `k` a compile-time constant at most sites.
-- `fs_perm4` (569): the exception, where two scalars wait across a loop boundary (the bus GKR's first layer).
+- `fs_perm` (550): one `KECCAK` with `k` waiting scalars, `k` a compile-time constant (`k: Const`) at every call site; where the count is not constant, the guest calls `fs_perm4` instead.
+- `fs_perm4` (569): the exception, called at every layer of the bus GKR, where up to two scalars wait across a loop boundary: the two roots at the first layer, none (zeroed cells) at later ones.
 - `fs_next` (617): read the next stream word and absorb it, in one step. As the comment says, this is the soundness invariant of the whole guest.
 - `squeeze` (628) and `challenge_from_state` (515): a challenge is lanes 0, 1, 2, assembled from cell 0 and the low half of cell 1.
 
@@ -122,8 +122,8 @@ The ambiguity is harmless if no two transcripts that agree so far can differ in 
 
 The full argument is in `529-analysis.md` §4. In short:
 
-- **For a fixed bytecode and fixed sizes**, `main`'s transcript is exactly CO25's DSFS. The start is CO25's informally covered `h = p` case (the instance absorbed from a fixed state). The codec writes each scalar as its tagged lanes, zero-padded per round to a multiple of 16 lanes, with an empty round after a challenge encoded as 16 zero lanes. A challenge is the first three lanes of a 16-lane squeeze. `checks/co25_equivalence.py` runs CO25's Construction 3.3 literally against the real Python verifier and matches it on thousands of random schedules.
-- **Gap 1.** CO25 fixes round lengths in advance (Definition 4.1); here they depend on the sizes, which the prover chooses. CO25's reduction (BackTrack, Definition 5.3) already recovers each chain's instance before computing round offsets, so the offsets could come from the parsed sizes. That extension is plausible and unwritten.
+- **For a fixed bytecode and fixed sizes**, `main`'s transcript is CO25's DSFS. The start is CO25's informally covered `h = p` case (the instance absorbed from a fixed state), with the bytecode entering through its digest, the IV, which Keccak-256 computes on the same permutation, so this step also rests on gap 2's assumption and pays an IV collision. The codec writes each scalar as its tagged lanes, zero-padded per round to a multiple of 16 lanes, with an empty round after a challenge encoded as 16 zero lanes. A challenge is the first three lanes of a 16-lane squeeze. `checks/co25_equivalence.py` runs CO25's Construction 3.3 literally against the real Python verifier and matches it on thousands of random schedules.
+- **Gap 1.** CO25 fixes the number of rounds and their lengths in advance (the latter by its codec, Definition 4.1); here both depend on the bytecode's length and the sizes, which the prover may choose (the sizes always, the bytecode unless the program is fixed, and the bytecode reaches the sponge only through the IV). CO25's reduction (BackTrack, Definition 5.3) already recovers each chain's instance before computing round offsets, so the offsets could come from the parsed sizes. That extension is plausible and unwritten.
 - **Gap 2.** Merkle hashing (Keccak-256) runs on the same Keccak-f as the transcript, with no domain separation, while CO25's Merkle corollary assumes a separate hash. The bound needs Keccak-256 to be treated as an independent random oracle.
 - **Not the transcript's fault, but open.** SR soundness of the whole protocol (Annex B proves RBR soundness only for the PCS opening). Grinding is uncredited, so each query phase gives about 111 bits. The KRS25 setting applies, since the guest evaluates Keccak-f; its uncommitted-trace GKRs are grand products and Keccak-f with a state committed every 12 rounds (`KECCAK_DEPTH`, `crates/verifier/src/layout.rs:83`).
 - **The sponge's own term** is `25t²/2^576`, negligible. The real hash loss is birthday-scale in 256 bits (Merkle trees, IV).
@@ -138,7 +138,7 @@ The full argument is in `529-analysis.md` §4. In short:
 4. `replay_unchecked` must still succeed: `finish` passes only if the stream and the openings were read exactly to the end. The Keccak reduction's scalars must sit at the same stream positions.
 5. Sanity check: `bytecode_point` (challenge-derived) must differ, so the challenges really did change.
 
-If any read count depended on a value, the walk would fall out of step and fail. That was checked by mutation: a temporary change to `crates/verifier` reading one extra scalar when a bit of the root is 0 (false for the fixture's honest proof, so every other test still passes) made this test fail and no other. The test pins **reads**, not challenge counts: an extra `sample()` reads nothing, and nothing in the verifier's output counts permutations.
+If a read count depended on a value this change alters, the walk would almost certainly fall out of step and fail. That was checked by mutation: a temporary change to `crates/verifier` reading one extra scalar when a bit of the root is 0 (false for the fixture's honest proof, so the verifiers binary's other tests, which walk only that proof, still pass) made this test fail and no other test in that binary. The test pins **reads**, not challenge counts: an extra `sample()` reads nothing, and nothing in the verifier's output counts permutations.
 
 Run it:
 
@@ -148,8 +148,8 @@ cargo test --release -p leanvm_core --test verifiers only_the_sizes
 
 ## 7. Exercises
 
-1. **See the ambiguity.** Run `python3 .contrib/checks/collisions.py` and read the example group it prints. Then change `if len(pend) == 4` to remove the eager permutation and watch the collision set change.
-2. **See the mapping.** Run `python3 .contrib/checks/co25_equivalence.py 200`. Find `phi` and `co25_run`, and explain to yourself why the `stated` codec fails exactly when round 1 is empty.
+1. **See the ambiguity.** Run `python3 .contrib/checks/collisions.py` and read the example group it prints. Then disable the permutation a fifth scalar forces (for example, change `if len(pend) == 4:` to `if False:`, letting the rate grow without bound) and watch the collisions disappear.
+2. **See the mapping.** Run `python3 .contrib/checks/co25_equivalence.py 200`. Find `phi` and `co25_run`, and explain to yourself why, with sizes absorbed (as on `main`), the `stated` codec fails exactly when round 1 is empty, and why without sizes it is the `fixed` codec that fails there instead (hint: whether the start leaves a full rate waiting).
 3. **Break the invariant.** In `crates/verifier/src/lib.rs`, after the root is read (line 250), add `if !transcript.checked() && halves[0].c0 & 1 == 0 { transcript.next_scalar()?; }`. Run the verifiers test binary and confirm that only `only_the_sizes_shape_the_transcript` fails. Then revert.
 4. **Count permutations.** `git apply .contrib/checks/fs_count.patch`, rebuild, and run `cargo leanvm recursion --n 2 --xmss-per-leaf 50 --log-inv-rate 2`. Sum the `FSCOUNT replay` lines in pairs, since the counters are process-wide. Revert with `git checkout crates/verifier`.
 5. **Trace one WHIR level** in `crates/verifier/src/whir.rs` from line 150: list each absorb and sample in order, and mark where a run of challenges happens back to back (these are the only places packing challenges would save permutations).
