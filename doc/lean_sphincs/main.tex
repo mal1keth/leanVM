@@ -55,7 +55,7 @@
 
 \begin{abstract}
 
-This specification defines leanSPHINCS, a stateless hash-based signature scheme: SLH-DSA~\cite{FIPS205} on Keccak-256, with WOTS$^+$C~\cite{HK22C} as its one-time signature and a hypertree of three layers of different heights. It keeps FIPS~205's algorithms, address and input layouts wherever Table~\ref{tab:fips} does not say otherwise, but it is not a FIPS~205 parameter set and does not interoperate with FIPS~205 implementations.
+This specification defines leanSPHINCS, a stateless hash-based signature scheme: SLH-DSA~\cite{FIPS205} on Keccak-256, with WOTS$^+$C~\cite{HK22C} as its one-time signature and a hypertree of three layers of different heights. It keeps FIPS~205's algorithms, address and input layouts wherever the table of Section~\ref{sec:overview} does not say otherwise, but it is not a FIPS~205 parameter set and does not interoperate with FIPS~205 implementations.
 
 \begin{itemize}
   \item \textbf{NIST security level~1}~\cite{NISTPQC}: a target of 127 bits of classical security in the random-oracle model and about 64 bits in the quantum random-oracle model (Section~\ref{sec:security}).
@@ -69,7 +69,7 @@ This specification defines leanSPHINCS, a stateless hash-based signature scheme:
 \section{Overview and differences from FIPS 205}
 \label{sec:overview}
 
-A message digest picks a FORS instance and one leaf in each of its trees. The FORS signature signs the message, and a hypertree of WOTS$^+$C keys signs the FORS public key up to the public key. Table~\ref{tab:fips} lists every point where leanSPHINCS departs from FIPS~205. Everything else is FIPS~205's: the address and its types $0$ to $6$; the input layouts of $\mathsf F$, $\mathsf H$, $\mathsf T_\ell$, $\PRF$ and $\PRFmsg$; FORS, its secrets, its trees and the compression of its roots by $\mathsf T_k$; the hashing of the hypertree's nodes; the split of the digest into FORS leaves, tree index and leaf index; pure SLH-DSA's framing of the message with its context; deterministic signing with $\mathit{opt\_rand}=\pkseed$; the public key $\pkseed\concat\pkroot$; and the order of a signature.
+A message digest picks a FORS instance and one leaf in each of its trees. The FORS signature signs the message, and a hypertree of WOTS$^+$C keys signs the FORS public key up to the public key. The table below lists every point where leanSPHINCS departs from FIPS~205. Everything else is FIPS~205's: the address and its types $0$ to $6$; the input layouts of $\mathsf F$, $\mathsf H$, $\mathsf T_\ell$, $\PRF$ and $\PRFmsg$; FORS, its secrets, its trees and the compression of its roots by $\mathsf T_k$; the hashing of the hypertree's nodes; the split of the digest into FORS leaves, tree index and leaf index; pure SLH-DSA's framing of the message with its context; deterministic signing with $\mathit{opt\_rand}=\pkseed$; the public key $\pkseed\concat\pkroot$; and the order of a signature.
 
 \begin{table}[ht]
 \centering
@@ -90,8 +90,6 @@ Signature & $R$, $\mathit{SIG}_{\mathrm{FORS}}$, $\mathit{SIG}_{\mathrm{HT}}$ & 
 Lifetime & $2^{64}$ signatures & $2^{30}$ signatures\\
 \bottomrule
 \end{tabular}
-\caption{Where leanSPHINCS departs from FIPS~205.}
-\label{tab:fips}
 \end{table}
 
 \section{Hashing and parameters}
