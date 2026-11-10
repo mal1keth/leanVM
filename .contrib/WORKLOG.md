@@ -1,5 +1,7 @@
 # Work log: leanVM#529 (Fiat-Shamir transcript)
 
+> **2026-11-10: overtaken.** Upstream's `formal/` (commit `b6167fe`, Nov 9) proves leanVM's knowledge soundness, Fiat-Shamir transcript included, in Lean. The drafted comment, intro and PR are superseded and were never posted. `HANDOFF.md` is the current state and supersedes this log where they differ.
+
 Branch `test/gallant-ritchie-n13fe5` on `mal1keth/leanVM`, based on upstream `main` at `23a305b` (2026-11-04). The fork's `main` equalled upstream's when the work started.
 
 ## Outcome
@@ -71,6 +73,7 @@ None is a bug in the running code; they are gaps in what is written down or prov
 | KRS25 described as needing a circuit the prover chooses; their §4 attacks a fixed universal circuit and calls that reasoning "perilous" | review round 3 | `04f5690` |
 | "random" dropped from "random oracle"; Definition 4.1 credited with fixing the number of rounds; small wording | review round 3 and a final read | `78b2209`, `04f5690` |
 | Wrote `#529` in commit messages pushed to the public fork. GitHub resolved them to the upstream issue, whose timeline has shown six of these commits as references since Nov 4, before any comment was posted | a check of the issue page on Nov 10 | not undoable by rewriting the fork, which would also break the comment's permalink; later commit messages carry no issue references |
+| Told Adi on Nov 10 that the comment could be posted after checking only the transcript code on the new `main`; the commit that deleted the Python verifier also added `formal/`, which closes the comment's gaps | the review of `HANDOFF.md` | comment, intro and PR marked superseded; nothing was posted |
 
 The pattern: most errors were facts stated from memory or from a summary (a commit message, an issue page) instead of from the primary source. The rest came in with a revision: a review fix applied wrongly, a word dropped, and a reviewer's replacement text taken unchecked (Definition 4.1). Each was caught by a later check against the source before posting. The review of this log found one more of the same kind: it said every claim had three review rounds, which was true only of the comment, the analysis and the spec.
 

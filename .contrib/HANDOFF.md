@@ -1,66 +1,71 @@
 # Handoff: leanVM Fiat-Shamir transcript work
 
-For an agent picking this up. Written 2026-11-10. Read this first, then `AGENTS.md` (the repository's rules), then `.contrib/WORKLOG.md`.
+For an agent picking this up. Written 2026-11-10. Read this first; where `WORKLOG.md` or other notes differ, this file is newer. Then read `AGENTS.md` (the repository's rules) and upstream's `formal/statement.tex` (below).
+
+## Stop first: the plan was overtaken on 2026-11-09
+
+Upstream commit `b6167fe` (Tom Wambsgans, Nov 9) vendored `formal/`: Lean 4 developments from Verified-zkEVM/leanerVM, pinned to leanVM at `40f877dc` (on `main`), with a plain-language summary in `formal/statement.tex`. It states, "proved using only Lean's three axioms … no `sorry`":
+
+- **Knowledge soundness of leanVM's verifier** in the random-permutation model: Keccak-f[1600] is a uniformly random permutation, and Keccak-256 is the sponge over that same permutation. The adversary outputs the program, the public input and the proof; the extractor is straight-line; the error is at most `(Q+2^14)·2^-128 + 5(Q+2^14)²·2^-256` for `Q ≤ 2^128` queries.
+- Completeness, the guest program's soundness as an aggregation step, the signature schemes' strong unforgeability, LeanDA's binding.
+- An explicit list of what is not proved (its last section): soundness across recursion levels; quantum adversaries; programs that evaluate their own proof's duplex (the KRS25 setting), excluded by the model; the Rust verifier, prover and guests themselves (differential-tested against the Lean specification, not proved); LeanDA's link to the in-circuit check; witness generation.
+
+That proof covers everything the drafted #529 comment called open: the duplex's security, gap 1 (a prover choosing the program and sizes), gap 2 (Merkle hashing on the same permutation) and knowledge soundness. **The drafted comment, the Discord intro and the option A PR are superseded; each now carries a banner saying so. Do not post or port them.** Nothing was posted: the issue page on Nov 10 still showed only kevaundray's Oct 7 comment (plus the commit references below).
 
 ## The person and the goal
 
-Adi (cryptography researcher, GitHub fork `mal1keth/leanVM`) wants to contribute to [leanEthereum/leanVM issue 529](https://github.com/leanEthereum/leanVM/issues/529), "Review Fiat-Shamir construction", opened by kevaundray on 2026-10-07: "@khovratovich noted that the duplex construction looks insecure", plus a relayed ask for a duplex with 128 bits provable in the CO25 or SAFE paradigm. Adi's plan had three steps: post a scoping comment on the issue, write an analysis, then one PR in the direction the maintainers pick (A: prove the current mode; B: add framing; C: squeeze several challenges per permutation). A Discord intro in #lean-consensus was also planned. Adi prefers direct, honest feedback, including being told when they are wrong.
+Adi (cryptography researcher, public fork `mal1keth/leanVM`) wanted to contribute to [leanEthereum/leanVM issue 529](https://github.com/leanEthereum/leanVM/issues/529), "Review Fiat-Shamir construction", opened by kevaundray on 2026-10-07 ("@khovratovich noted that the duplex construction looks insecure"), with a same-day comment relaying Dmitry's asks: a duplex over BLAKE2s/2b compression, long absorb-squeeze patterns, fewest compression calls, 128 bits provable in the CO25 or SAFE paradigm. Adi's plan: a scoping comment, an analysis, then one PR (A: prove the current mode; B: add framing; C: squeeze several challenges per permutation), and a Discord intro in #lean-consensus (server unknown; the Discord connector fails to connect here). Adi prefers direct, honest feedback, including being told when they are wrong.
 
-## Where things are
+**Awaiting Adi's decision on re-scoping** (see "Options now").
 
-| item | state |
+## What exists, and its status
+
+| item | status |
 | --- | --- |
-| Scoping comment, `.contrib/529-comment.md` | final; not posted. Adi posts it from their own account |
-| Analysis, `.contrib/529-analysis.md` | final for `main` at `23a305b`; linked from the comment by permalink at fork commit `1798ed7` (verified publicly reachable) |
-| Discord intro, `.contrib/discord-intro.md` | final; to post after the comment, with the comment's URL. Which server hosts #lean-consensus is unknown; the Discord connector fails to connect here |
-| Option A implementation | on branch `test/gallant-ritchie-n13fe5`, commits `3aa2f33`, `e0a58c1`, `7ec4b6e`, `78b2209`: a "Security" paragraph in `doc/leanvm/body/08-end-to-end-protocol.tex`, the test `only_the_sizes_shape_the_transcript` in `crates/leanvm_core/tests/verifiers/portable_verifier.rs`, `\fsq` in `macros.tex`, CO25/CY24/KRS25 in `refs.bib`, one sentence in `AGENTS.md`. Full gates passed on `23a305b`: testall 328 passed, 0 failed |
-| PR description, `.contrib/pr-option-a.md` | draft; open nothing until the maintainers answer the comment |
-| Learning guide, `.contrib/LEARNING.md` | for Adi; reviewed |
-| Evidence, `.contrib/checks/` | `co25_equivalence.py`, `collisions.py`, `fs_count.patch` (see the analysis §6 and LEARNING §7) |
+| `.contrib/529-comment.md` | superseded; do not post |
+| `.contrib/529-analysis.md` | record of `main` at `23a305b`; its gaps are closed by `formal/`; still the permalink target `1798ed7` |
+| `.contrib/discord-intro.md`, `.contrib/pr-option-a.md` | superseded |
+| Option A commits on `test/gallant-ritchie-n13fe5` (`3aa2f33`, `e0a58c1`, `7ec4b6e`, `78b2209`) | a §8 "Security" paragraph, the test `only_the_sizes_shape_the_transcript`, `\fsq`, CO25/CY24/KRS25 in `refs.bib`, an AGENTS.md sentence; all gates passed at `23a305b`; no longer cherry-pick onto `main` and now largely redundant with `formal/` |
+| `.contrib/LEARNING.md` | still a valid guide to the transcript as it was at `23a305b`; the sponge is unchanged on `main` |
+| `.contrib/WORKLOG.md` | full history, verification, and the mistakes table |
+| `.contrib/checks/` | `co25_equivalence.py`, `collisions.py` (both run against `23a305b`'s files), `fs_count.patch` (applies to `23a305b`'s verifier, not to `main`'s) |
 
-Waiting on Adi: read and post the comment (decide on mentioning kevaundray), then the Discord intro, then bring back the maintainers' reply.
+## What was established (still true, still useful as background)
 
-## What was established
+- **History.** On 2026-10-07 `main` had a BLAKE2s hash chain. The day before, #523 put a two-scalar BLAKE2s step on `riscv-exploration`, each block tagged with its role and scalar count. #552 (kevaundray, Oct 10) replaced it with a framed BLAKE2s duplex and a DMV18 argument; #607 and #620 (Thomas Coratger) followed, all on `riscv-exploration`. `main` got its Keccak-f duplex from #636 (merged Oct 23, after Plonky3's challenger).
+- **The construction** (unchanged on `main` but for cosmetics): Keccak-f[1600] duplex in overwrite mode, rate lanes 0..16, capacity 16..25; each GF(2^192) scalar absorbed as `(c0, c1, c2, tag)`, tag 1, or 4 for the grinding nonce; four scalars per permutation; one challenge per permutation; the rate zeroed after every permutation; seed = permute(IV ‖ public input), IV = Keccak-256("leanvm-v1" ‖ bytecode).
+- **One encoding ambiguity**, harmless because the schedule follows from the bytecode's length and the announced sizes: a permutation forced by a fifth absorbed scalar equals a challenge drawn with four waiting (brute force over 265,720 sequences of length at most 11).
+- **Guest cost** (at `23a305b`, counted in the native verifier and carried to the guest at one `KECCAK` per permutation): about 921 Fiat-Shamir permutations per child verified, about 15% of the root's `KECCAK`s; option C would save about 2% of them. Any transcript change now also means updating the Lean proof, which makes C less attractive still.
 
-All checked against the code, git or the papers; details and sources in `529-analysis.md`.
+## Upstream drift since `23a305b` (to `64f8030`, 67 commits)
 
-- **History.** On 2026-10-07 `main` had a BLAKE2s hash chain, not a duplex. The day before, #523 put a two-scalar BLAKE2s step on `riscv-exploration`, its blocks tagged with role and count. #552 (kevaundray, Oct 10) replaced it with a framed BLAKE2s duplex with a written argument (DMV18), and #607 and #620 (Thomas Coratger) followed, all on `riscv-exploration`. `main` got its current duplex from #636 (merged Oct 23, after Plonky3's challenger). The issue page links none of this.
-- **The construction.** Keccak-f[1600] duplex in overwrite mode, rate lanes 0..16, capacity 16..25 (576 bits); each scalar of GF(2^192) absorbed as `(c0, c1, c2, tag)`, tag 1 or 4 (grinding nonce); four scalars per permutation; one challenge per permutation (lanes 0..3); the rate is zeroed after every permutation; seed = permute(IV ‖ public input) with IV = Keccak-256("leanvm-v1" ‖ bytecode).
-- **One ambiguity:** a permutation forced by a fifth absorbed scalar equals a challenge drawn with four waiting. Brute force over all 265,720 operation sequences of length at most 11 finds no other.
-- **Why harmless:** every count and order of absorbs and squeezes follows from the bytecode's length and the eight announced sizes, absorbed right after the seed. Never from a challenge, another sent value or Merkle data.
-- **CO25 (Chiesa and Orrù, ePrint 2025/536):** for a fixed bytecode and sizes, `main` is exactly their DSFS with an injective, unbiased codec (`co25_equivalence.py`: 0 mismatches on 6,000 schedules). Two gaps to a theorem: (1) CO25's codec fixes round lengths by `(λ, n)`, so a prover choosing the sizes needs an extension of their BackTrack reduction (plausible: it recovers the instance before computing offsets); (2) Merkle hashing (Keccak-256) shares Keccak-f with the transcript, outside CO25 §2.6's informal Corollary 1, so Keccak-256 must be assumed an independent random oracle. Not the transcript's fault but open: state-restoration soundness beyond the PCS opening, grinding credit (query phases give 111 bits without it), knowledge soundness, KRS25 exposure (the guest evaluates Keccak-f).
-- **Options:** A recommended. B (framing) would close the gaps through another theorem at the cost of a protocol change. C saves about 2% of the guest's `KECCAK`s (measured at `23a305b`).
+- `b6167fe`: `formal/` (above); the Python verifier deleted; the Lean transcription `formal/Statement/LeanVmVerifier.lean` became the second of AGENTS.md's three verifiers; the verifiers' fixture moved to `crates/leanvm_core/tests/verifiers/fixture.rs` (its `chain()` is also called by `formal/lean_vm/scripts/export-rust.sh`).
+- `3f2ff324`: Merkle openings are `Vec<Vec<MerklePath>>` carrying their positions; `Transcript::merkle` refuses, in replay too, a path of the wrong shape or at a position other than the sampled query; `Summary` lost `merkle_paths`; `finish()` returns `()`.
+- `40f877dc` (#724): `KECCAK` writes one, two or all thirteen output cells; the KECCAK table gained two columns (a layout constant, so the schedule invariant still holds).
+- The guest was reworked (#660, #724), so the cost figures above are from `23a305b`.
+- Checked: every `transcript.<method>(...)` call in `crates/verifier/src` is textually identical to `23a305b`'s except `merkle()` (dropped `row_words`) and `finish()`; the sponge, `sample_queries`, the WHIR query counts and `KECCAK_DEPTH = 12` are unchanged.
+- If anything of option A is ever ported, the test needs a new design: tampering every scalar now moves the queries and the replay refuses the honest openings (`MerkleOpeningPosition`), and the old helpers (`Proof::load`, `encode`, `python_verifier`) are gone. Two honest proofs with the same shape and different values would work, but the fixture cannot give them as it stands (`chain(loop_steps)` changes the row counts, the public input is the program's own output, the prover is deterministic): add a second placeholder that changes values but no size, for example the Keccak message `[5, 7, 5, 7, 5, 7, 5, 7, 5, 7]`, keeping `chain()`'s signature.
 
-## Upstream drift (found 2026-11-10)
+## Options now (for Adi to choose)
 
-Upstream `main` is at `64f8030`, 67 commits past `23a305b`. Checked: all 62 transcript call sites in `crates/verifier/src` are textually identical to `23a305b`'s except `merkle()`, which dropped a parameter and never touches the sponge, and the control-flow changes in `lib.rs` and `keccak.rs` are in claim evaluation, not around transcript calls; the sponge in `crates/fiat_shamir/src/lib.rs` and `crates/verifier/src/transcript.rs` is unchanged but for cosmetics, `sample_queries` is unchanged, `KECCAK_DEPTH` is still 12 and the Keccak outputs are still virtual, so the comment's argument holds. Changed:
-
-- The Python verifier was deleted. The verifiers' test fixture moved to `crates/leanvm_core/tests/verifiers/fixture.rs`.
-- Merkle openings are now `Vec<Vec<MerklePath>>` carrying their query positions; `Transcript::merkle` requires, in replay too, that each path's position equals the sampled query and its shape matches.
-- The guest was reworked (#660, and #724's `KECCAK` with a custom output size), so the comment's cost figures are dated in the comment as measured at `23a305b`.
-- The four implementation commits no longer cherry-pick cleanly (conflicts in `portable_verifier.rs` and §8).
-
-**The test must be redesigned for the PR.** It changes every scalar after the sizes and expects the replay to walk the whole proof; on today's `main` the changed challenges move the queries and the replay refuses the honest openings (`MerkleOpeningPosition`). A design that survives: prove the fixture program twice with different values but the same shape (same sizes), and check that both replays read the same number of scalars and the same `keccak_scalars` range. Re-run the mutation check (a value-dependent extra read in `walk`) on whatever design is chosen.
+1. **Close the loop on the issue, briefly or not at all.** The maintainers wrote `formal/`, so they know. If Adi wants to engage, a short comment asking whether the issue is resolved for `main` by `formal/` (and whether anything remains for `riscv-exploration`) is the most it needs. Nothing is needed otherwise.
+2. **Contribute where `formal/statement.tex` says "not proved".** The closest to Adi's expertise and to the issue's origin: the KRS25 setting the model excludes by construction. The recursion guest verifies proofs of its own bytecode and evaluates Keccak-f with one instruction, so whether a self-referential program could exploit its own proof's duplex is a real, open question. Others: soundness across recursion levels; a quantum (QRPM) analysis; the Rust verifier's equivalence to the Lean transcription (differential fuzzing exists; a review of its coverage could help).
+3. **Review `formal/statement.tex` itself** against the Rust code and the papers, as a reader of a security claim: a modest, useful first contribution that also builds familiarity.
 
 ## Rules learned the hard way
 
-- **No issue or PR numbers in commit messages pushed to the fork.** `#529` in six commit messages put cross-references on the upstream issue's timeline. Write "issue 529" without `#`, or nothing.
-- **Never post to GitHub or Discord for Adi.** Adi posts. Do not open the upstream PR until the maintainers answer and Adi agrees. Push only to `test/gallant-ritchie-n13fe5`.
-- **Check every claim against the primary source before it goes in front of Adi or the maintainers**, including a reviewer's suggested replacement text. Three review rounds each caught errors, several introduced by the previous fix (see the work log's mistakes table). An independent adversarial review before any security claim under Adi's name is worth its cost.
-- **The upstream PR is built from upstream `main`**, with the implementation squashed into one commit. `.contrib/` never goes upstream and stays committed on the fork (the comment links into it, and the container is ephemeral).
-- **Repository style** (from AGENTS.md): no em or en dashes in prose, no hard-wrapped Markdown or LaTeX paragraphs, measurements only in commit messages, one symbol one meaning in the spec (`preamble/macros.tex`), doc labels are an API.
+- **Check what a commit adds, not only what it removes.** The `formal/` commit was first noticed only as "the Python verifier was deleted", and Adi was told the comment could be posted. A review of this file caught it.
+- **No issue or PR numbers in commit messages pushed to the fork.** `#529` in seven commit messages (`79dcb29`, `147b30b`, `86a4257`, `0a0feae`, `04f5690`, `1798ed7`, `0075601`) put six of them on the upstream issue's timeline since Nov 4; four also name #523, #552, #607, #620 or #636.
+- **Never post to GitHub or Discord for Adi.** Adi posts. Push only to `test/gallant-ritchie-n13fe5`.
+- **Check every claim against the primary source** before it reaches Adi or the maintainers, including a reviewer's suggested replacement text. Every review round in this work found errors, several introduced by the previous fix (see the work log's mistakes table).
+- **`.contrib/` never goes upstream** and stays committed on the fork (the container is ephemeral, and `1798ed7` is a permalink target).
+- **Repository style** (AGENTS.md): no em or en dashes in prose, no hard-wrapped Markdown or LaTeX paragraphs, measurements only in commit messages, one symbol one meaning in the spec, doc labels are an API.
 
 ## Environment notes
 
-- Upstream is reachable for git reads: `git remote add upstream https://github.com/leanEthereum/leanvm`, then `GIT_LFS_SKIP_SMUDGE=1 git fetch upstream main riscv-exploration`. The session's GitHub tools cannot read upstream issues; a web fetch of the issue's HTML page works (the API returned 403).
-- ePrint refuses automated PDF downloads; do not work around it. Adi supplied CO25, SAFE and KRS25 as uploads in the first session; a new session will not have them, so ask Adi to re-upload if a citation needs checking.
-- TeX for `latexmk` in a fresh container: `apt-get install -y --no-install-recommends latexmk texlive-latex-recommended texlive-latex-extra texlive-science texlive-fonts-recommended texlive-pictures texlive-bibtex-extra biber lmodern`.
-- On a 4-core machine workflows run two agents at a time; the nine-reviewer round took about 70 minutes. `cargo testall` takes under 5 minutes with a warm cache.
+- Git reads of upstream work anonymously: `git remote add upstream https://github.com/leanEthereum/leanvm`, then `GIT_LFS_SKIP_SMUDGE=1 git fetch upstream main riscv-exploration`. The session's GitHub tools cannot read upstream issues; a web fetch of the issue's HTML page works (its API returned 403).
+- ePrint refuses automated PDF downloads; do not work around it. Adi supplied CO25, SAFE and KRS25 as uploads in the first session; a new session will not have them.
+- TeX for `latexmk` in a fresh container: `apt-get update && apt-get install -y --no-install-recommends latexmk texlive-latex-recommended texlive-latex-extra texlive-science texlive-fonts-recommended texlive-pictures texlive-bibtex-extra biber lmodern texlive-fonts-extra`. The last package (about 630 MB) is needed only on upstream `main`, whose preamble loads `dsfont`.
+- Lean for `formal/`: `lake exe cache get` once, then `lake build` (per AGENTS.md); not tried in this work.
+- On a 4-core machine workflows run two agents at a time. `cargo testall` takes under 5 minutes with a warm cache.
 - Commit messages end with the attribution lines the session's system prompt gives.
-
-## Next steps, by the maintainers' answer
-
-1. **`main` is the target, option A welcome:** branch from upstream `main`, port the four commits (redesign the test as above; merge the Security paragraph into the current §8, re-checking every sentence against today's verifier), run the full gates and the mutation check, have the result reviewed, show Adi, then open the PR with `pr-option-a.md` adapted.
-2. **They want gap 1 worked out first:** extend CO25's BackTrack (§5.2, Definition 5.3) so round offsets come from the parsed sizes; write it for Adi to review. This is research, not code.
-3. **`riscv-exploration` is the target:** nothing on `main`; re-scope with Adi.
-4. **Anyone asks for current guest numbers:** apply `checks/fs_count.patch` (adapting it to today's verifier), run `cargo leanvm recursion --n 2 --xmss-per-leaf 900 --log-inv-rate 2`, and sum the `FSCOUNT replay` lines in pairs.
