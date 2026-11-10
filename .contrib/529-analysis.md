@@ -1,7 +1,5 @@
 # Fiat-Shamir on `main`: how far CO25's duplex-sponge Fiat-Shamir covers the transcript
 
-> **Overtaken on 2026-11-09** by upstream's `formal/` (commit `b6167fe`), which proves leanVM's knowledge soundness in the random-permutation model with the transcript, a prover-chosen program and sizes, and Keccak-256 over the same permutation all covered: the two gaps of §4.4 and §4.5, and the open knowledge soundness of §4.7, are closed there. This analysis stays as a record of `main` at `23a305b` and of the reasoning; see `HANDOFF.md`.
-
 Notes for [leanEthereum/leanVM#529](https://github.com/leanEthereum/leanVM/issues/529), against upstream `main` at `23a305b` (2026-11-04). Revised after an adversarial review that found the first version overclaimed (§9). Not yet reviewed by the maintainers.
 
 Code links are permalinks to upstream `main` at that commit.

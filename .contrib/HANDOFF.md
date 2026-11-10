@@ -1,6 +1,6 @@
 # Handoff: leanVM Fiat-Shamir transcript work
 
-For an agent picking this up. Written 2026-11-10. Read this first; where `WORKLOG.md` or other notes differ, this file is newer. Then read `AGENTS.md` (the repository's rules) and upstream's `formal/statement.tex` (below).
+For an agent picking this up. Written 2026-11-10, updated 2026-11-11 with a local session's findings. Read this first; where `WORKLOG.md` or other notes differ, this file is newer. Then read `AGENTS.md` (the repository's rules) and upstream's `formal/statement.tex` (below).
 
 ## Stop first: the plan was overtaken on 2026-11-09
 
@@ -10,7 +10,7 @@ Upstream commit `b6167fe` (Tom Wambsgans, Nov 9) vendored `formal/`: Lean 4 deve
 - Completeness, the guest program's soundness as an aggregation step, the signature schemes' strong unforgeability, LeanDA's binding.
 - An explicit list of what is not proved (its last section): soundness across recursion levels; quantum adversaries; programs that evaluate their own proof's duplex (the KRS25 setting), excluded by the model; the Rust verifier, prover and guests themselves (differential-tested against the Lean specification, not proved); LeanDA's link to the in-circuit check; witness generation.
 
-That proof covers everything the drafted #529 comment called open: the duplex's security, gap 1 (a prover choosing the program and sizes), gap 2 (Merkle hashing on the same permutation) and knowledge soundness. **The drafted comment, the Discord intro and the option A PR are superseded; each now carries a banner saying so. Do not post or port them.** Nothing was posted: the issue page on Nov 10 still showed only kevaundray's Oct 7 comment (plus the commit references below).
+That proof covers everything the drafted #529 comment called open, by another route than the analysis's CO25 mapping: the duplex's security; gap 1, since the adversary outputs the program and the sizes; gap 2, through a two-oracle transfer (`formal/common/Common/Transfer2.lean`) under a duplex discipline (`DuplexOK`, `Common/Indiff2/Defs.lean`): every direct permutation call absorbs a non-final block into the initial state or an earlier answer. For Keccak that is `keccakNF` and `keccakNF_blockTo` (`Common/Keccak.lean`): byte 135 is kept, so the duplex never writes lane 16. leanVM's transcript is shown to follow it in `formal/lean_vm/LeanVM/Protocol/Rpm/Duplex.lean`: `AdmissibleVm` (every query keeps lanes 16..24 of the zero state or of an earlier answer) and `theorem duplexVm_verifier` (line 362). Its header also names `duplexVm_honest` for the honest prover, but no definition under that name was found in `formal/lean_vm` (completeness side; not checked further, and the Lean was not built here). No Lean lemma matching the analysis's schedule rule was found; the formal route does not need one, since it proves soundness of the Lean transcription itself and ties the Rust verifier to it by testing (`formal/check-all.sh`: the Rust-vs-Lean verifier differential `fuzz-verifier.py` over fixtures and their mutations, a wire differential and a prover differential). **Do not post the drafted comment, and do not send Option A's Security paragraph upstream as it is.** The Discord intro and `pr-option-a.md` carry a superseded banner. `529-comment.md` and `529-analysis.md` do not: they belong to a local session (see below) and are left exactly as at `bc52efa`. Nothing was posted: the issue page on Nov 10 still showed only kevaundray's Oct 7 comment (plus the commit references below).
 
 ## The person and the goal
 
@@ -22,8 +22,7 @@ Adi (cryptography researcher, public fork `mal1keth/leanVM`) wanted to contribut
 
 | item | status |
 | --- | --- |
-| `.contrib/529-comment.md` | superseded; do not post |
-| `.contrib/529-analysis.md` | record of `main` at `23a305b`; its gaps are closed by `formal/`; still the permalink target `1798ed7` |
+| `.contrib/529-comment.md`, `.contrib/529-analysis.md` | **owned by a local session**: its branch `contrib/formal-revision` (off `bc52efa`, not yet pushed, one independent review) revises these two files only. Do not edit them until that branch is merged into `test/gallant-ritchie-n13fe5`; here they are byte-identical to `bc52efa` so the merge is clean. The analysis at `1798ed7` stays the permalink target |
 | `.contrib/discord-intro.md`, `.contrib/pr-option-a.md` | superseded |
 | Option A commits on `test/gallant-ritchie-n13fe5` (`3aa2f33`, `e0a58c1`, `7ec4b6e`, `78b2209`) | a §8 "Security" paragraph, the test `only_the_sizes_shape_the_transcript`, `\fsq`, CO25/CY24/KRS25 in `refs.bib`, an AGENTS.md sentence; all gates passed at `23a305b`; no longer cherry-pick onto `main` and now largely redundant with `formal/` |
 | `.contrib/LEARNING.md` | still a valid guide to the transcript as it was at `23a305b`; the sponge is unchanged on `main` |
@@ -46,6 +45,10 @@ Adi (cryptography researcher, public fork `mal1keth/leanVM`) wanted to contribut
 - Checked: every `transcript.<method>(...)` call in `crates/verifier/src` is textually identical to `23a305b`'s except `merkle()` (dropped `row_words`) and `finish()`; the sponge, `sample_queries`, the WHIR query counts and `KECCAK_DEPTH = 12` are unchanged.
 - If anything of option A is ever ported, the test needs a new design: tampering every scalar now moves the queries and the replay refuses the honest openings (`MerkleOpeningPosition`), and the old helpers (`Proof::load`, `encode`, `python_verifier`) are gone. Two honest proofs with the same shape and different values would work, but the fixture cannot give them as it stands (`chain(loop_steps)` changes the row counts, the public input is the program's own output, the prover is deterministic): add a second placeholder that changes values but no size, for example the Keccak message `[5, 7, 5, 7, 5, 7, 5, 7, 5, 7]`, keeping `chain()`'s signature.
 
+## The test, if Option A is ever revived
+
+Redesigning `only_the_sizes_shape_the_transcript` for today's `main` is probably not worth it. What it pins (the Rust verifier's reads depend only on the shape) is now covered from the other side: the Lean transcription carries the proof, and `formal/check-all.sh`'s verifier differential checks the Rust verifier against it on fixtures and their mutations. The test would remain a cheap, targeted regression for the Rust side only; keep it out unless a maintainer asks.
+
 ## Options now (for Adi to choose)
 
 1. **Close the loop on the issue, briefly or not at all.** The maintainers wrote `formal/`, so they know. If Adi wants to engage, a short comment asking whether the issue is resolved for `main` by `formal/` (and whether anything remains for `riscv-exploration`) is the most it needs. Nothing is needed otherwise.
@@ -55,6 +58,8 @@ Adi (cryptography researcher, public fork `mal1keth/leanVM`) wanted to contribut
 ## Rules learned the hard way
 
 - **Check what a commit adds, not only what it removes.** The `formal/` commit was first noticed only as "the Python verifier was deleted", and Adi was told the comment could be posted. A review of this file caught it.
+- **A drift check covers what upstream added outside the files we touch.** The Nov 10 check compared transcript call sites only. Run at least `git diff --stat <base>..upstream/main -- formal doc AGENTS.md` (and skim `git log --stat`) before calling any claim about `main` current.
+- **Coordinate file ownership across sessions.** A local session owns `529-comment.md` and `529-analysis.md` until its branch is merged; this session's banner on them had to be reverted to keep that merge clean.
 - **No issue or PR numbers in commit messages pushed to the fork.** `#529` in seven commit messages (`79dcb29`, `147b30b`, `86a4257`, `0a0feae`, `04f5690`, `1798ed7`, `0075601`) put six of them on the upstream issue's timeline since Nov 4; four also name #523, #552, #607, #620 or #636.
 - **Never post to GitHub or Discord for Adi.** Adi posts. Push only to `test/gallant-ritchie-n13fe5`.
 - **Check every claim against the primary source** before it reaches Adi or the maintainers, including a reviewer's suggested replacement text. Every review round in this work found errors, several introduced by the previous fix (see the work log's mistakes table).
