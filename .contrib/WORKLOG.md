@@ -70,6 +70,7 @@ None is a bug in the running code; they are gaps in what is written down or prov
 | The comment fell behind the notes on scope (one proof, knowledge soundness, 111 bits, the batching transcript, the Keccak-256 assumption); "framing cannot close gap 1" was backwards | review round 2 | `0a0feae`, `7ec4b6e` |
 | KRS25 described as needing a circuit the prover chooses; their §4 attacks a fixed universal circuit and calls that reasoning "perilous" | review round 3 | `04f5690` |
 | "random" dropped from "random oracle"; Definition 4.1 credited with fixing the number of rounds; small wording | review round 3 and a final read | `78b2209`, `04f5690` |
+| Wrote `#529` in commit messages pushed to the public fork. GitHub resolved them to the upstream issue, whose timeline has shown six of these commits as references since Nov 4, before any comment was posted | a check of the issue page on Nov 10 | not undoable by rewriting the fork, which would also break the comment's permalink; later commit messages carry no issue references |
 
 The pattern: most errors were facts stated from memory or from a summary (a commit message, an issue page) instead of from the primary source. The rest came in with a revision: a review fix applied wrongly, a word dropped, and a reviewer's replacement text taken unchecked (Definition 4.1). Each was caught by a later check against the source before posting. The review of this log found one more of the same kind: it said every claim had three review rounds, which was true only of the comment, the analysis and the spec.
 
@@ -79,6 +80,10 @@ The pattern: most errors were facts stated from memory or from a summary (a comm
 - The Discord connector failed to connect, and the session could not read `leanEthereum/leanVM` issues through the GitHub tools; the issue was read with a web fetch, and git history through anonymous clones.
 - TeX was not installed; installed `latexmk`, `texlive-*` and `lmodern` to build the spec.
 - The workflow cap of two concurrent agents on this 4-core machine made the first review round take about 70 minutes.
+
+## Upstream drift (found Nov 10)
+
+Upstream `main` moved 67 commits past `23a305b`, to `64f8030`. The sponge in `crates/fiat_shamir/src/lib.rs` is unchanged but for cosmetics, so the construction the analysis describes stands. But the Python verifier was deleted, the verifiers' test fixture moved to `fixture.rs`, Merkle openings now carry query indexes and leaf sizes (`3f2ff324`), WHIR's queries and the verifier's transcript changed, and the guest was rewritten (#660, and #724's `KECCAK` with a custom output size). So the implementation commits no longer cherry-pick cleanly (conflicts in `portable_verifier.rs` and §8), the schedule invariant has to be re-checked on the new verifier, and the guest-cost numbers are from `23a305b`.
 
 ## Open items
 
