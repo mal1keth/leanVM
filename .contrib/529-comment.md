@@ -21,7 +21,7 @@ So my current view: the collision is harmless for a reason that can be stated pr
 - It credits no grinding. WHIR's query counts assume 17 bits of it, so without a proof-of-work argument each query phase gives about 111 bits of round-by-round soundness.
 - It takes the protocol's state-restoration soundness as given, which the spec establishes only for the opening.
 
-**Cost in the guest** (recursion 2→1, leaves of 900 leanXMSS, log-inv-rate 2): about 920 Fiat-Shamir permutations per child verified, counted in the native verifier (the guest replays each as one `KECCAK`), so roughly 1,840 of the root's ~12,700 `KECCAK` instructions, not counting the root's own batching transcript. Squeezing five challenges per permutation would save about 12% of those, about 2% of the root's `KECCAK`s, so I don't think that's worth a protocol change on its own.
+**Cost in the guest** (measured on `main` at `23a305b`, before the guest rework of #660 and #724; recursion 2→1, leaves of 900 leanXMSS, log-inv-rate 2): about 920 Fiat-Shamir permutations per child verified, counted in the native verifier (the guest replays each as one `KECCAK`), so roughly 1,840 of the root's ~12,700 `KECCAK` instructions, not counting the root's own batching transcript. Squeezing five challenges per permutation would save about 12% of those, about 2% of the root's `KECCAK`s, so I don't think that's worth a protocol change on its own.
 
 **Questions:**
 
