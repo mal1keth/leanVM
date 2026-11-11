@@ -1,4 +1,4 @@
-<!-- Short alternative to 529-comment.md, for https://github.com/leanEthereum/leanVM/issues/529, posted from Adi's own account. Everything between the two rules below is the comment. Written 2026-11-11, revised after one independent review, then given a humanizer pass. DO NOT POST YET: the notes link at the bottom is a placeholder (REPIN_AFTER_PUSH) and must become a permalink to the commit on the public fork that holds the revised analysis. No one is mentioned by handle; Adi decides whether to add mentions. -->
+<!-- Short alternative to 529-comment.md, for https://github.com/leanEthereum/leanVM/issues/529, posted from Adi's own account. Everything between the two rules below is the comment. Written 2026-11-11, revised after one independent review, then given a humanizer pass. The notes link at the bottom is a permalink to the revised analysis at commit 7f70002 on the public fork. No one is mentioned by handle; Adi decides whether to add mentions. -->
 
 ---
 
@@ -13,6 +13,6 @@ Two notes from reading the transcript:
 
 Last, which construction was the original concern about: #523's step on `riscv-exploration`, `main`'s BLAKE2s chain at the time, or duplex challengers in general?
 
-Notes, with the brute force and the measurements: [mal1keth/leanVM `.contrib/529-analysis.md`](https://github.com/mal1keth/leanVM/blob/REPIN_AFTER_PUSH/.contrib/529-analysis.md)
+Notes, with the brute force and the measurements: [mal1keth/leanVM `.contrib/529-analysis.md`](https://github.com/mal1keth/leanVM/blob/7f700020b38a241ada5619a65b94e954c9abbf37/.contrib/529-analysis.md)
 
 ---

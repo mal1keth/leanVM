@@ -1,4 +1,4 @@
-<!-- Draft reply for https://github.com/leanEthereum/leanVM/issues/529, posted from Adi's own account. Everything between the two rules below is the comment. Revised 2026-11-11 for upstream's Lean proof in formal/, checked by one independent review, then given a humanizer pass. This is the long version; 529-comment-short.md is the one Adi prefers. DO NOT POST YET: the notes link at the bottom is a placeholder (REPIN_AFTER_PUSH) and must become a permalink to the commit on the public fork that holds the revised analysis. -->
+<!-- Draft reply for https://github.com/leanEthereum/leanVM/issues/529, posted from Adi's own account. Everything between the two rules below is the comment. Revised 2026-11-11 for upstream's Lean proof in formal/, checked by one independent review, then given a humanizer pass. This is the long version; 529-comment-short.md is the one Adi prefers. The notes link at the bottom is a permalink to the revised analysis at commit 7f70002 on the public fork. -->
 
 ---
 
@@ -25,6 +25,6 @@ Questions:
 2. Which construction, and what about it, did the concern refer to: #523's step, `main`'s BLAKE2s chain, or duplex challengers in general? `main` is now the last kind, so I'd like whatever I write to answer what was actually seen.
 3. If something is still wanted here, which would be useful: a sentence in the spec's §8 on the non-injectivity, with a pointer to how `formal/` treats it; or a written analysis of how far KRS25's attack is from leanVM's GKRs and its recursion step? I'd rather do the one you want than guess.
 
-Notes, with the brute force, the CO25 mapping and the measurements: [mal1keth/leanVM `.contrib/529-analysis.md`](https://github.com/mal1keth/leanVM/blob/REPIN_AFTER_PUSH/.contrib/529-analysis.md)
+Notes, with the brute force, the CO25 mapping and the measurements: [mal1keth/leanVM `.contrib/529-analysis.md`](https://github.com/mal1keth/leanVM/blob/7f700020b38a241ada5619a65b94e954c9abbf37/.contrib/529-analysis.md)
 
 ---
