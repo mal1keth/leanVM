@@ -1,8 +1,8 @@
-<!-- Short alternative to 529-comment.md, for https://github.com/leanEthereum/leanVM/issues/529, posted from Adi's own account. Everything between the two rules below is the comment. Written 2026-11-11, revised after one independent review, then given a humanizer pass. The notes link at the bottom is a permalink to the revised analysis at commit 7f70002 on the public fork. No one is mentioned by handle; Adi decides whether to add mentions. -->
+<!-- Short alternative to 529-comment.md, for https://github.com/leanEthereum/leanVM/issues/529, posted from Adi's own account. Everything between the two rules below is the comment. Written 2026-11-11, revised after one independent review, then given a humanizer pass. The notes link at the bottom is a permalink to the revised analysis at commit 7f70002 on the public fork. Posted by Adi on 2026-11-11 as https://github.com/leanEthereum/leanVM/issues/529#issuecomment-6787918509, with no handle mentions; the text below is as posted. -->
 
 ---
 
-I'd like to help with this on `main`, but first I want to check what is left to do.
+I'd like to help with this on `main`, but I first want to understand what is left.
 
 As far as I can tell from git, the issue is older than `main`'s current transcript. #552, #607 and #620 reworked the BLAKE2s one on `riscv-exploration`, and `main` got its Keccak-f[1600] duplex later, in #636. Since Nov 9 there is also `formal/`. As I read `formal/statement.tex`, it proves knowledge soundness of a Lean transcription of the verifier in the random-permutation model, duplex included (`LeanVM.knowledgeSoundness_holds`), and the Rust is tied to that transcription by differential tests. Does that close this issue for `main`? Or is it about `riscv-exploration`'s transcript?
 
